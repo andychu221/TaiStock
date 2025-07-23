@@ -1,0 +1,2365 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台股儀表板 - TaviStock v5.3 (穩定版)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js and plugins -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+    <!-- Datalabels plugin for showing values on charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Custom Styles -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
+        .sticky-header { position: sticky; top: 0; background-color: #f9fafb; z-index: 10; }
+        .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+        .sidebar-scroll::-webkit-scrollbar-thumb { background-color: #a0aec0; border-radius: 20px; }
+        .page-content { display: none; animation: fadeIn 0.5s ease-in-out; }
+        .page-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .chart-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 300px; color: #9ca3af; background-color: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 0.75rem; text-align: center; padding: 1rem; }
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.85); display: flex; justify-content: center; align-items: center; z-index: 9999; flex-direction: column; gap: 1rem; transition: opacity 0.3s; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #4f46e5; animation: spin 1s ease infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status-log p { padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; display: flex; align-items: center; transition: background-color 0.3s; }
+        .status-log .status-processing { background-color: #eef2ff; color: #4338ca; }
+        .status-log .status-success { background-color: #f0fdf4; color: #166534; }
+        .status-log .status-error { background-color: #fef2f2; color: #991b1b; }
+        .status-log .status-warning { background-color: #fffbeb; color: #92400e; }
+        .status-log .status-info { background-color: #f3f4f6; color: #4b5563; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .sortable-header { cursor: pointer; user-select: none; }
+        .sortable-header:hover { background-color: #eff6ff; }
+        .filter-input, .filter-select, .param-input { width: 100%; padding: 4px 8px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 4px; background-color: white; }
+        .pagination-controls button { padding: 6px 12px; border: 1px solid #d1d5db; background-color: white; border-radius: 4px; font-size: 14px; }
+        .pagination-controls button:hover:not(:disabled) { background-color: #f3f4f6; }
+        .pagination-controls button.active { background-color: #4f46e5; color: white; border-color: #4f46e5; }
+        .dashboard-tab { padding: 6px 12px; font-size: 14px; font-weight: 500; border-radius: 6px; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+        .dashboard-tab.active { background-color: #4f46e5; color: white; }
+        .dashboard-tab:not(.active) { background-color: #eef2ff; color: #4338ca; }
+        .dashboard-tab:not(.active):hover { background-color: #e0e7ff; }
+        /* Modal styles */
+        #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 5000; display: none; }
+        #modal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); z-index: 5001; width: 90%; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; }
+        /* File Upload Drop Zone */
+        #drop-zone { border: 2px dashed #d1d5db; border-radius: 0.75rem; padding: 2rem; text-align: center; transition: background-color 0.2s, border-color 0.2s; }
+        #drop-zone.dragover { background-color: #eef2ff; border-color: #4f46e5; }
+    </style>
+</head>
+<body class="flex h-screen text-gray-800">
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-text" class="text-gray-700 font-medium">資料載入中...</p>
+    </div>
+
+    <!-- Modal HTML -->
+    <div id="modal-overlay">
+        <div id="modal-box">
+            <div class="flex justify-between items-center mb-4 border-b pb-3">
+                <h2 id="modal-title" class="text-xl font-bold text-gray-800"></h2>
+                <button id="modal-close-btn" class="text-gray-500 hover:text-gray-800">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="modal-content" class="overflow-y-auto">
+                <!-- Modal content will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
+        <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
+            <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
+            <span>TaviStock v5.3</span>
+        </div>
+        <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
+            <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="layout-dashboard" class="mr-3 w-5 h-5"></i>儀表板
+            </a>
+            <a href="#stock-list" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="list-checks" class="mr-3 w-5 h-5"></i>基本資料
+            </a>
+            <a href="#daily-close" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="calendar-days" class="mr-3 w-5 h-5"></i>每日行情
+            </a>
+             <a href="#institutional-investors" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="users-2" class="mr-3 w-5 h-5"></i>三大法人
+            </a>
+            <a href="#monthly-revenue" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="file-bar-chart-2" class="mr-3 w-5 h-5"></i>每月營收
+            </a>
+            <a href="#stock-analysis" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="candlestick-chart" class="mr-3 w-5 h-5"></i>個股分析
+            </a>
+            <a href="#peer-comparison" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="git-compare-arrows" class="mr-3 w-5 h-5"></i>同業比較
+            </a>
+             <div class="pt-4 mt-2 border-t">
+                <h3 class="px-4 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">資料中心</h3>
+                <a href="#data-management" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                    <i data-lucide="database" class="mr-3 w-5 h-5"></i>資料管理
+                </a>
+            </div>
+        </nav>
+        <div class="p-4 border-t">
+            <div class="p-4 bg-indigo-50 text-indigo-800 rounded-lg text-sm">
+                <i data-lucide="info" class="inline-block w-4 h-4 mr-1.5 align-text-bottom"></i>
+                <span id="sidebar-info-text">正在從快取載入資料...</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 p-6 lg:p-8 overflow-y-auto bg-gray-50">
+        <!-- Dashboard Page -->
+        <div id="dashboard" class="page-content">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">市場儀表板</h1>
+                <span id="dashboard-date" class="text-sm font-medium text-gray-500"></span>
+            </div>
+            
+            <div id="dashboard-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-6 mb-6"></div>
+
+            <div class="grid grid-cols-1 gap-6 mb-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">市場漲跌分佈</h3>
+                        <div>
+                            <label for="dashboard-date-selector" class="text-sm mr-2">選擇日期:</label>
+                            <select id="dashboard-date-selector" class="filter-select text-sm p-1 border rounded-md"></select>
+                        </div>
+                    </div>
+                    <div id="distribution-chart-container" class="relative h-96 cursor-pointer"><div class="chart-placeholder">無每日行情資料</div><canvas id="distribution-chart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                 <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">類股漲跌家數</h3>
+                    <div id="sector-up-down-chart-container" class="relative h-96"><div class="chart-placeholder">無每日行情資料</div><canvas id="sector-up-down-chart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">類股平均漲跌幅</h3>
+                    <div id="sector-perf-chart-container" class="relative h-96"><div class="chart-placeholder">無每日行情資料</div><canvas id="sector-perf-chart"></canvas></div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 gap-6 mb-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">個股排行 Top 20</h3>
+                        <div id="ranking-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md"></div>
+                    </div>
+                    <div id="ranking-table" class="text-sm overflow-x-auto"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                 <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">整體市場總營收趨勢</h3>
+                        <div>
+                            <select id="revenue-industry-filter" class="filter-select text-sm p-1 border rounded-md"></select>
+                        </div>
+                    </div>
+                    <div id="market-revenue-chart-container" class="relative h-80"><div class="chart-placeholder">無月營收資料</div><canvas id="market-revenue-chart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">三大法人買賣超趨勢</h3>
+                        <div class="flex items-center gap-2">
+                             <select id="inst-trend-industry-filter" class="filter-select text-sm p-1 border rounded-md"></select>
+                             <select id="inst-trend-type-filter" class="filter-select text-sm p-1 border rounded-md">
+                                <option value="all">全法人</option>
+                                <option value="foreign">外資</option>
+                                <option value="it">投信</option>
+                                <option value="dealer">自營商</option>
+                             </select>
+                        </div>
+                    </div>
+                    <div id="market-inst-chart-container" class="relative h-80"><div class="chart-placeholder">無三大法人或每日行情資料</div><canvas id="market-inst-chart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stock List Page -->
+        <div id="stock-list" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">基本資料</h1>
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div id="table-container-stock-list" class="overflow-auto" style="max-height: 75vh;"></div>
+            </div>
+        </div>
+
+        <!-- Daily Closing Prices Page -->
+        <div id="daily-close" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">每日行情</h1>
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div id="table-container-daily" class="overflow-auto" style="max-height: 75vh;"></div>
+            </div>
+        </div>
+        
+        <!-- Institutional Investors Page -->
+        <div id="institutional-investors" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">三大法人買賣超</h1>
+             <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div id="table-container-institutional" class="overflow-auto" style="max-height: 75vh;"></div>
+            </div>
+        </div>
+
+        <!-- Monthly Revenue Page -->
+        <div id="monthly-revenue" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">每月營收</h1>
+             <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div id="table-container-revenue" class="overflow-auto" style="max-height: 75vh;"></div>
+            </div>
+        </div>
+
+        <!-- Individual Stock Analysis Page -->
+        <div id="stock-analysis" class="page-content">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+                <div class="flex flex-wrap items-end gap-4">
+                    <div>
+                        <label for="stock-symbol" class="font-medium text-sm">股票代號:</label>
+                        <input type="text" id="stock-symbol" placeholder="例: 2330" class="mt-1 w-40 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <button id="analyze-stock-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">分析</button>
+                    <p id="stock-name-display" class="text-lg font-semibold text-indigo-700"></p>
+                </div>
+            </div>
+            <div id="analysis-results" class="hidden">
+                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Left Column -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術分析圖</h3>
+                            <div id="candlestick-chart-container" class="relative h-[450px]">
+                                <div class="chart-placeholder">請輸入股票代號並點擊分析</div>
+                                <canvas id="candlestick-chart" style="display: none;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Right Column -->
+                    <div class="lg:col-span-1 space-y-6">
+                        <div class="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術指標設定</h3>
+                            <div id="indicator-controls" class="space-y-4 text-sm">
+                                <!-- MA controls -->
+                                <div>
+                                   <label class="flex items-center font-medium"><input type="checkbox" id="show-ma" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked> <span class="ml-2">移動平均線 (MA)</span></label>
+                                   <div class="grid grid-cols-3 gap-2 mt-2 pl-6">
+                                     <input type="number" id="ma1-period" value="5" class="param-input text-center" title="MA1 週期">
+                                     <input type="number" id="ma2-period" value="20" class="param-input text-center" title="MA2 週期">
+                                     <input type="number" id="ma3-period" value="60" class="param-input text-center" title="MA3 週期">
+                                   </div>
+                                </div>
+                                <!-- BB controls -->
+                                <div>
+                                   <label class="flex items-center font-medium"><input type="checkbox" id="show-bb" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">布林通道 (BB)</span></label>
+                                   <div class="grid grid-cols-2 gap-2 mt-2 pl-6">
+                                     <input type="number" id="bb-period" value="20" class="param-input text-center" title="BB 週期">
+                                     <input type="number" id="bb-stddev" value="2" step="0.1" class="param-input text-center" title="BB 標準差">
+                                   </div>
+                                </div>
+                                <!-- TAIEX compare -->
+                                 <label class="flex items-center font-medium"><input type="checkbox" id="show-taiex" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">比較大盤 (TAIEX)</span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 gap-6 mt-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm" id="stock-basic-info-container"></div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">三大法人買賣超 (張)</h3>
+                        <div id="institutional-investors-chart-container" class="relative h-80"><div class="chart-placeholder">無三大法人資料</div><canvas id="institutional-investors-chart" style="display: none;"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">月營收趨勢 (百萬元)</h3>
+                        <div id="revenue-trend-chart-container-individual" class="relative h-80"><div class="chart-placeholder">無月營收資料</div><canvas id="revenue-trend-chart-individual" style="display: none;"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Peer Comparison Page -->
+        <div id="peer-comparison" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">同業比較</h1>
+            <div class="bg-white p-6 rounded-xl shadow-sm mb-6">
+                <div class="flex flex-wrap items-end gap-4">
+                    <div>
+                        <label for="comparison-stocks" class="font-medium text-sm">輸入股票代號 (以逗號分隔):</label>
+                        <input type="text" id="comparison-stocks" placeholder="例: 2330,2317,2454" class="mt-1 w-full md:w-72 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                     <div>
+                        <label for="comparison-industry" class="font-medium text-sm">或選擇產業:</label>
+                        <select id="comparison-industry" class="mt-1 w-full md:w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">-- 請先擷取基本資料 --</option>
+                        </select>
+                    </div>
+                    <button id="compare-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">比較</button>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">正規化股價走勢比較 (%)</h3>
+                 <div id="comparison-chart-container" class="relative h-96"><div class="chart-placeholder">請選擇股票或產業進行比較</div><canvas id="comparison-chart" style="display: none;"></canvas></div>
+            </div>
+        </div>
+        
+        <!-- Data Management Page -->
+        <div id="data-management" class="page-content">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">資料管理中心</h1>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Data Fetching & Uploading -->
+                <div class="bg-white p-6 rounded-xl shadow-sm space-y-8">
+                    <!-- Web Fetching Section -->
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-900 mb-4">網路資料擷取</h2>
+                        <div id="fetch-options-container">
+                            <!-- Fetch options will be generated by JS -->
+                        </div>
+                        <div class="mt-4">
+                            <h3 class="text-md font-medium text-gray-800 mb-2">擷取狀態</h3>
+                            <div id="fetch-status-log" class="status-log space-y-2 max-h-40 overflow-y-auto pr-2">
+                                <p class="text-gray-500 status-info">尚未開始擷取。</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File Upload Section -->
+                    <div class="border-t pt-8">
+                        <h2 class="text-xl font-semibold text-gray-900 mb-4">本機檔案匯入</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="upload-report-type" class="font-medium text-sm">1. 選擇報表類型:</label>
+                                <select id="upload-report-type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">-- 請選擇 --</option>
+                                    <option value="basic">基本資料 (JSON)</option>
+                                    <option value="daily">每日行情 (HTML/JSON)</option>
+                                    <option value="institutional">三大法人 (HTML/JSON)</option>
+                                    <option value="revenue">每月營收 (HTML/JSON)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="font-medium text-sm">2. 上傳檔案:</label>
+                                <div id="drop-zone" class="mt-1">
+                                    <i data-lucide="upload-cloud" class="mx-auto h-10 w-10 text-gray-400"></i>
+                                    <p class="mt-2 text-sm text-gray-600">拖曳檔案至此</p>
+                                    <p class="text-xs text-gray-500 mt-1">或</p>
+                                    <button id="upload-btn" class="mt-2 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-100 text-xs font-medium">選擇檔案</button>
+                                    <input type="file" id="file-input" multiple accept=".html,.htm,.json" class="hidden">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <h3 class="text-md font-medium text-gray-800 mb-2">匯入狀態</h3>
+                            <div id="upload-status-log" class="status-log space-y-2 max-h-40 overflow-y-auto pr-2">
+                                <p class="text-gray-500 status-info">尚未開始匯入。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Data Cache Management -->
+                <div class="bg-white p-6 rounded-xl shadow-sm space-y-6">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-900 mb-4">本機快取管理</h2>
+                        <div id="cache-management-container" class="space-y-3">
+                            <!-- Cache status and download buttons will be generated here -->
+                        </div>
+                        <div class="mt-4">
+                            <button id="clear-cache-btn" class="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 shadow-sm flex items-center justify-center gap-2">
+                                <i data-lucide="trash-2"></i>
+                                清除所有本機快取
+                            </button>
+                        </div>
+                    </div>
+                    <div class="prose prose-sm max-w-none text-gray-600 bg-gray-50 p-4 rounded-lg">
+                        <h4>說明</h4>
+                        <p>此應用程式會將匯入的資料儲存在您的瀏覽器中 (Local Storage)，下次開啟時可直接載入，節省時間。</p>
+                        <ul>
+                            <li><strong>網路資料擷取</strong>：從台灣證券交易所等公開網站抓取最新資料。</li>
+                            <li><strong>本機檔案匯入</strong>：從您的電腦上傳從公開網站下載的 HTML 或 JSON 檔案。</li>
+                            <li><strong>本機快取管理</strong>：查看已儲存的資料狀態，並可將其下載為 JSON 檔案備份，或清除所有快取。</li>
+                        </ul>
+                         <p class="mt-4 p-3 bg-yellow-50 text-yellow-800 rounded-md"><strong>提示：</strong> 頻繁擷取可能導致您的 IP 被暫時封鎖。請勿在短時間內重複點擊下載按鈕。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    // Register the datalabels plugin globally
+    Chart.register(ChartDataLabels);
+
+    window.addEventListener('load', function () {
+        // --- 全域變數與設定 ---
+        const stockData = {
+            basic: [], 
+            daily: [], 
+            institutional: [], 
+            revenue: []
+        };
+        const CACHE_KEYS = Object.keys(stockData);
+        const industryMap = {
+            '01': '水泥工業', '02': '食品工業', '03': '塑膠工業', '04': '紡織纖維',
+            '05': '電機機械', '06': '電器電纜', '08': '玻璃陶瓷', '09': '造紙工業',
+            '10': '鋼鐵工業', '11': '橡膠工業', '12': '汽車工業', '13': '電子工業',
+            '14': '建材營造業', '15': '航運業', '16': '觀光餐旅', '17': '金融保險業',
+            '18': '貿易百貨業', '19': '綜合', '20': '其他業', '21': '化學工業',
+            '22': '生技醫療業', '23': '油電燃氣業', '24': '半導體業', '25': '電腦及週邊設備業',
+            '26': '光電業', '27': '通信網路業', '28': '電子零組件業', '29': '電子通路業',
+            '30': '資訊服務業', '31': '其他電子業', '32': '文化創意業', '33': '農業科技業',
+            '34': '電子商務', '35': '綠能環保', '36': '數位雲端', '37': '運動休閒',
+            '38': '居家生活'
+        };
+        let charts = {};
+        let isFetching = false;
+        const CORS_PROXY = 'https://corsproxy.io/?'; 
+        let tableStates = {}; 
+        let dashboardState = {
+            ranking: { sortColumn: 'totalVolume', sortDirection: 'desc' }
+        };
+
+        // --- UI 控制元素 ---
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const sidebarInfoText = document.getElementById('sidebar-info-text');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalBox = document.getElementById('modal-box');
+        const modalTitle = document.getElementById('modal-title');
+        const modalContent = document.getElementById('modal-content');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        // --- 初始化流程 ---
+        async function initializeApp() {
+            showLoading('應用程式初始化中...');
+            lucide.createIcons();
+            setupNavigation();
+            initAllCharts();
+            setupModal();
+            
+            await loadAllDataFromCache();
+            
+            setupDataCenterUI();
+            updateCacheManagementUI();
+            setupEventListeners();
+            
+            updateAllPages();
+            
+            hideLoading();
+        }
+
+        // Run the app
+        initializeApp();
+
+        // --- Helper Functions ---
+        function formatNumber(num, decimals = 2) {
+            const numValue = parseFloat(String(num).replace(/,/g, ''));
+            if (isNaN(numValue)) return num; // Return original if not a number
+            
+            return numValue.toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+        
+        const toDate = (dateStr) => {
+            if (!dateStr || typeof dateStr !== 'string') return null;
+            // Normalize date string, handling ROC and Western formats
+            let s = String(dateStr).replace(/-/g, '/').replace(/\s/g, '').replace(/年|月/g, '/').replace(/日/, '');
+            let year, month, day;
+
+            const parts = s.split('/');
+
+            if (parts.length === 3) {
+                let y = parseInt(parts[0], 10);
+                let m = parseInt(parts[1], 10);
+                let d = parseInt(parts[2], 10);
+
+                if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+
+                // If year is > 1911, it's a Western year. If it's small, it's an ROC year.
+                if (y > 1911) {
+                    year = y;
+                } else if (y < 200) { // Assuming ROC years won't reach 200 soon
+                    year = y + 1911;
+                } else {
+                    return null; // Ambiguous or invalid year
+                }
+                month = m;
+                day = d;
+            } else if (s.length === 8 && !isNaN(s)) { // Handle YYYYMMDD
+                year = parseInt(s.substring(0, 4), 10);
+                month = parseInt(s.substring(4, 6), 10);
+                day = parseInt(s.substring(6, 8), 10);
+            } else if (s.length === 7 && !isNaN(s)) { // Handle ROC YYYMMDD
+                year = parseInt(s.substring(0, 3), 10) + 1911;
+                month = parseInt(s.substring(3, 5), 10);
+                day = parseInt(s.substring(5, 7), 10);
+            } else { // Fallback for other formats like ISO
+                const d = new Date(dateStr);
+                return !isNaN(d) ? d : null;
+            }
+
+            if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+
+            // Final validation to prevent invalid dates like 2025/2/30
+            const dateObj = new Date(year, month - 1, day);
+            if (dateObj.getFullYear() !== year || dateObj.getMonth() !== month - 1 || dateObj.getDate() !== day) {
+                return null;
+            }
+            return dateObj;
+        };
+
+        const toDisplayDate = (dateObj) => {
+            if (!(dateObj instanceof Date) || isNaN(dateObj)) return '';
+            return `${dateObj.getFullYear()}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}`;
+        };
+
+        const formatDateForDisplay = (dateStr) => {
+            if (!dateStr || typeof dateStr !== 'string') return '';
+            if (dateStr.includes('-')) return dateStr; // Already formatted
+            
+            let year, month, day;
+            if (dateStr.length === 8) { // YYYYMMDD
+                 year = dateStr.substring(0, 4);
+                 month = dateStr.substring(4, 6);
+                 day = dateStr.substring(6, 8);
+            } else if (dateStr.length === 7) { // YYYMMDD (ROC)
+                year = parseInt(dateStr.substring(0, 3), 10) + 1911;
+                month = dateStr.substring(3, 5);
+                day = dateStr.substring(5, 7);
+            } else {
+                return dateStr; // Return original if format is unknown
+            }
+            return `${year}-${month}-${day}`;
+        };
+
+        // --- Modal Control ---
+        function setupModal() {
+            modalCloseBtn.addEventListener('click', hideModal);
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) hideModal();
+            });
+        }
+        function showModal(title, contentHTML) {
+            modalTitle.textContent = title;
+            modalContent.innerHTML = contentHTML;
+            modalOverlay.style.display = 'block';
+        }
+        function hideModal() {
+            modalOverlay.style.display = 'none';
+        }
+
+        // --- UI 控制函式 ---
+        function showLoading(text = '資料載入中...') {
+            loadingText.textContent = text;
+            loadingOverlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            loadingOverlay.style.display = 'none';
+        }
+
+        function setFetchingState(fetching) {
+            isFetching = fetching;
+            const btn = document.getElementById('start-fetch-btn');
+            if (!btn) return;
+
+            btn.disabled = fetching;
+            const currentIcon = btn.querySelector('i, svg');
+            const textSpan = btn.querySelector('span');
+
+            const newIcon = document.createElement('i');
+            if (fetching) {
+                if (textSpan) textSpan.textContent = '擷取中...';
+                newIcon.setAttribute('data-lucide', 'loader');
+                newIcon.classList.add('animate-spin');
+            } else {
+                if (textSpan) textSpan.textContent = '開始網路擷取';
+                newIcon.setAttribute('data-lucide', 'download-cloud');
+            }
+            
+            if (currentIcon) {
+                currentIcon.replaceWith(newIcon);
+            } else {
+                btn.prepend(newIcon);
+            }
+            lucide.createIcons();
+        }
+
+        // --- 快取管理 ---
+        function saveDataToCache(key, data) {
+            try {
+                if (!data || !Array.isArray(data)) return;
+                const dataToStore = { timestamp: new Date().getTime(), payload: data };
+                localStorage.setItem(`stockData_${key}`, JSON.stringify(dataToStore));
+            } catch (e) {
+                console.error(`儲存 ${key} 到快取失敗:`, e);
+                updateStatusLog('upload', `儲存 ${key} 失敗，可能是空間不足。`, 'error');
+            }
+        }
+
+        function loadDataFromCache(key) {
+            try {
+                const item = localStorage.getItem(`stockData_${key}`);
+                return item ? JSON.parse(item) : null;
+            } catch (e) {
+                console.error(`解析快取中的 ${key} 資料失敗:`, e);
+                localStorage.removeItem(`stockData_${key}`);
+                return null;
+            }
+        }
+
+        async function loadAllDataFromCache() {
+            for (const key of CACHE_KEYS) {
+                const cached = loadDataFromCache(key);
+                if (cached && cached.payload && Array.isArray(cached.payload)) {
+                    stockData[key] = cached.payload;
+                }
+            }
+        }
+
+        function clearAllDataFromCache() {
+            showModal(
+                '確認清除快取',
+                `<p class="mb-4">您確定要清除所有儲存在瀏覽器中的股票資料嗎？此動作無法復原。</p>
+                 <div class="flex justify-end gap-3">
+                    <button id="confirm-clear-btn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">確定清除</button>
+                    <button id="cancel-clear-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
+                 </div>`
+            );
+            document.getElementById('confirm-clear-btn').onclick = () => {
+                hideModal();
+                showLoading('正在清除快取...');
+                CACHE_KEYS.forEach(key => localStorage.removeItem(`stockData_${key}`));
+                for (const key of CACHE_KEYS) stockData[key] = [];
+                tableStates = {};
+                updateAllPages();
+                hideLoading();
+                showModal('操作完成', '<p>所有本機快取已清除！</p>');
+            };
+            document.getElementById('cancel-clear-btn').onclick = hideModal;
+        }
+
+        // --- 資料管理 UI ---
+        function updateCacheManagementUI() {
+            const container = document.getElementById('cache-management-container');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            CACHE_KEYS.forEach(key => {
+                const cachedData = loadDataFromCache(key);
+                const count = cachedData?.payload?.length || 0;
+                const timestamp = cachedData?.timestamp ? new Date(cachedData.timestamp).toLocaleString('zh-TW') : '無';
+                
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+                div.innerHTML = `
+                    <div>
+                        <p class="font-medium text-gray-800">${getReportName(key)}</p>
+                        <p class="text-sm text-gray-500">筆數: ${formatNumber(count, 0)} | 更新時間: ${timestamp}</p>
+                    </div>
+                    <button data-key="${key}" class="download-btn bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-100 text-sm flex items-center gap-1.5" ${count === 0 ? 'disabled' : ''}>
+                        <i data-lucide="download" class="w-4 h-4"></i>JSON
+                    </button>
+                `;
+                container.appendChild(div);
+            });
+
+            document.querySelectorAll('.download-btn').forEach(btn => btn.addEventListener('click', (e) => handleDownloadData(e.currentTarget.dataset.key)));
+            document.getElementById('clear-cache-btn').addEventListener('click', clearAllDataFromCache);
+            lucide.createIcons();
+        }
+
+        function handleDownloadData(key) {
+            const data = stockData[key];
+            if (data && data.length > 0) {
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${key}_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } else {
+                showModal('下載錯誤', `<p>沒有 ${getReportName(key)} 的資料可供下載。</p>`);
+            }
+        }
+        
+        // --- 資料擷取與匯入 ---
+        function setupDataCenterUI() {
+            // Setup Web Fetching
+            const fetchContainer = document.getElementById('fetch-options-container');
+            if (fetchContainer) {
+                const today = new Date();
+                const threeDaysAgo = new Date();
+                threeDaysAgo.setDate(today.getDate() - 3);
+                
+                const todayStr = today.toISOString().split('T')[0];
+                const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
+
+                fetchContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-md font-medium text-gray-800 mb-2">1. 選擇報表</h3>
+                            <div id="report-checkboxes" class="grid grid-cols-2 gap-x-4 gap-y-2"></div>
+                        </div>
+                        <div>
+                            <h3 class="text-md font-medium text-gray-800 mb-2">2. 選擇期間 (基本資料除外)</h3>
+                            <div class="flex items-center gap-4">
+                                <div>
+                                    <label for="fetch-start-date" class="text-sm font-medium text-gray-700">開始:</label>
+                                    <input type="date" id="fetch-start-date" value="${threeDaysAgoStr}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                </div>
+                                <div>
+                                    <label for="fetch-end-date" class="text-sm font-medium text-gray-700">結束:</label>
+                                    <input type="date" id="fetch-end-date" value="${todayStr}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <button id="start-fetch-btn" class="w-full bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2 font-semibold">
+                            <i data-lucide="download-cloud"></i>
+                            <span>開始網路擷取</span>
+                        </button>
+                    </div>
+                `;
+                
+                const reportContainer = document.getElementById('report-checkboxes');
+                CACHE_KEYS.forEach(key => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center';
+                    div.innerHTML = `
+                        <input id="check-${key}" name="report" type="checkbox" value="${key}" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <label for="check-${key}" class="ml-2 block text-sm text-gray-900">${getReportName(key)}</label>
+                    `;
+                    reportContainer.appendChild(div);
+                });
+
+                document.getElementById('start-fetch-btn').addEventListener('click', startManualFetch);
+            }
+
+            // Setup File Upload
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+            const uploadBtn = document.getElementById('upload-btn');
+
+            if (dropZone && fileInput && uploadBtn) {
+                uploadBtn.addEventListener('click', () => fileInput.click());
+                fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+                dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+                dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('dragover');
+                    handleFiles(e.dataTransfer.files);
+                });
+            }
+            lucide.createIcons();
+        }
+
+        function updateStatusLog(logType, message, type = 'info') {
+            const logEl = document.getElementById(`${logType}-status-log`);
+            if (!logEl) return;
+
+            const iconMap = {
+                processing: '<i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>',
+                success: '<i data-lucide="check-circle-2" class="w-4 h-4 mr-2"></i>',
+                error: '<i data-lucide="x-circle" class="w-4 h-4 mr-2"></i>',
+                warning: '<i data-lucide="alert-triangle" class="w-4 h-4 mr-2"></i>',
+                info: '<i data-lucide="info" class="w-4 h-4 mr-2"></i>',
+            };
+            const p = document.createElement('p');
+            p.className = `status-${type}`;
+            p.innerHTML = `${iconMap[type] || ''} ${message}`;
+            
+            if (logEl.querySelector('.status-info')) logEl.innerHTML = '';
+            logEl.appendChild(p);
+            logEl.scrollTop = logEl.scrollHeight;
+            lucide.createIcons();
+        }
+
+        async function startManualFetch() {
+            if (isFetching) return;
+
+            const selectedReports = Array.from(document.querySelectorAll('#report-checkboxes input:checked')).map(el => el.value);
+            if (selectedReports.length === 0) {
+                showModal('提示', '<p>請至少選擇一個要下載的報表。</p>');
+                return;
+            }
+            
+            const startDate = new Date(document.getElementById('fetch-start-date').value);
+            const endDate = new Date(document.getElementById('fetch-end-date').value);
+
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate > endDate) {
+                showModal('錯誤', '<p>請選擇有效的開始與結束日期。</p>');
+                return;
+            }
+
+            setFetchingState(true);
+            document.getElementById('fetch-status-log').innerHTML = '';
+
+            for (const key of selectedReports) {
+                updateStatusLog('fetch', `[開始] 正在擷取 ${getReportName(key)}...`, 'processing');
+                
+                try {
+                    let data;
+                    let uniqueKeyGen;
+                    switch (key) {
+                        case 'basic':
+                            data = await fetchBasicDataFromApi();
+                            uniqueKeyGen = (row) => row['證券代號'];
+                            break;
+                        case 'daily':
+                            data = await fetchTwseDataByDay(startDate, endDate, 'afterTrading/MI_INDEX', '每日收盤行情', parseDailyData, { type: 'ALLBUT0999' });
+                            uniqueKeyGen = (row) => `${row['日期']}-${row['證券代號']}`;
+                            break;
+                        case 'institutional':
+                            data = await fetchTwseDataByDay(startDate, endDate, 'fund/T86', '三大法人買賣超日報', parseInstitutionalData, { selectType: 'ALLBUT0999' });
+                             uniqueKeyGen = (row) => `${row['日期']}-${row['證券代號']}`;
+                            break;
+                        case 'revenue':
+                            data = await fetchMonthlyRevenueByDateRange(startDate, endDate);
+                            uniqueKeyGen = (row) => `${row['資料年月']}-${row['公司代號']}`;
+                            break;
+                    }
+
+                    if (data && data.length > 0) {
+                        mergeAndDeduplicateData(key, data, uniqueKeyGen);
+                        updateStatusLog('fetch', `[成功] ${getReportName(key)} 擷取完成 (${formatNumber(data.length, 0)} 筆)。`, 'success');
+                    } else {
+                         updateStatusLog('fetch', `[警告] ${getReportName(key)} 擷取完成，但無資料。`, 'warning');
+                    }
+                } catch (error) {
+                    console.error(`擷取 ${key} 資料失敗:`, error);
+                    updateStatusLog('fetch', `[失敗] ${getReportName(key)} 擷取失敗: ${error.message}`, 'error');
+                }
+            }
+            
+            setFetchingState(false);
+        }
+        
+        // --- 資料擷取核心函式 ---
+        async function fetchWithTimeout(resource, options = {}, timeout = 20000) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(resource, { ...options, signal: controller.signal });
+                clearTimeout(id);
+                return response;
+            } catch (error) {
+                clearTimeout(id);
+                if (error.name === 'AbortError') throw new Error('請求超時 (20秒)');
+                throw error;
+            }
+        }
+
+        async function fetchAndParseHTML(url, encoding = 'utf-8') {
+            const response = await fetchWithTimeout(`${CORS_PROXY}${encodeURIComponent(url)}`);
+            if (!response.ok) throw new Error(`網路回應錯誤: ${response.status}`);
+            
+            const blob = await response.blob();
+            const text = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsText(blob, encoding);
+            });
+
+            const parser = new DOMParser();
+            return parser.parseFromString(text, 'text/html');
+        }
+
+        async function fetchBasicDataFromApi() {
+            const url = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L';
+            const options = {
+                method: 'GET',
+                headers: {
+                    'accept': 'application/json',
+                    'If-Modified-Since': 'Mon, 26 Jul 1997 05:00:00 GMT',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            };
+            const response = await fetchWithTimeout(url, options); 
+            if (!response.ok) throw new Error(`網路回應錯誤: ${response.status}`);
+            const apiData = await response.json();
+            return parseApiBasicData(apiData);
+        }
+
+        async function fetchTwseDataByDay(startDate, endDate, path, tableTitle, parserFunc, params) {
+            let allData = [];
+            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                if (d.getDay() === 0 || d.getDay() === 6) continue;
+                const dateStr = `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
+                const query = new URLSearchParams({ date: dateStr, ...params, response: 'html' }).toString();
+                const url = `https://www.twse.com.tw/rwd/zh/${path}?${query}`;
+                
+                try {
+                    const doc = await fetchAndParseHTML(url);
+                    const table = findTableByTitle(doc, [tableTitle]);
+
+                    if (!table || table.querySelector('tbody tr td')?.textContent.includes('沒有符合條件的資料')) {
+                        updateStatusLog('fetch', `無資料: ${tableTitle} (${dateStr})`, 'info');
+                        await new Promise(resolve => setTimeout(resolve, 2000)); // Increased delay
+                        continue;
+                    }
+                    
+                    const parsedRows = parserFunc(table);
+                    parsedRows.forEach(rowData => {
+                        rowData['日期'] = `${d.getFullYear()}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+                        allData.push(rowData);
+                    });
+                    updateStatusLog('fetch', `已擷取 ${tableTitle} (${dateStr})`, 'success');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (e) {
+                    updateStatusLog('fetch', `擷取 ${tableTitle} 資料失敗 (${dateStr}): ${e.message}`, 'error');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
+            return allData;
+        }
+
+        async function fetchMonthlyRevenueByDateRange(startDate, endDate) {
+            let allData = [];
+            let uniqueMonths = new Set();
+            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                 uniqueMonths.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+            }
+
+            for (const monthStr of Array.from(uniqueMonths).sort().reverse()) {
+                const [year, month] = monthStr.split('-');
+                const rocYear = parseInt(year, 10) - 1911;
+                const url = `https://mopsov.twse.com.tw/nas/t21/sii/t21sc03_${rocYear}_${month}.html`;
+                
+                try {
+                    const doc = await fetchAndParseHTML(url, 'big5');
+                    const parsedData = parseMonthlyRevenue(doc.body);
+                    if (parsedData.length > 0) {
+                        allData.push(...parsedData);
+                        updateStatusLog('fetch', `已擷取月營收 (${rocYear}/${month})`, 'success');
+                    } else {
+                        updateStatusLog('fetch', `無資料: 月營收 (${rocYear}/${month})`, 'info');
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (e) {
+                     updateStatusLog('fetch', `擷取月營收失敗 (${rocYear}/${month}): ${e.message}`, 'error');
+                     await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
+            return allData;
+        }
+
+        // --- 檔案上傳處理 ---
+        function handleFiles(files) {
+            const reportType = document.getElementById('upload-report-type').value;
+            if (!reportType) {
+                showModal('提示', '<p>請先選擇要匯入的報表類型。</p>');
+                return;
+            }
+
+            document.getElementById('upload-status-log').innerHTML = ''; 
+            
+            for (const file of files) {
+                const isJson = file.name.endsWith('.json');
+                const isHtml = file.name.endsWith('.html') || file.name.endsWith('.htm');
+
+                if (!isJson && !isHtml) {
+                    updateStatusLog('upload', `[錯誤] ${file.name} 不是有效的 HTML 或 JSON 檔案。`, 'error');
+                    continue;
+                }
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        processUploadedFile(e.target.result, file.name, reportType, isJson);
+                    } catch (error) {
+                         updateStatusLog('upload', `[錯誤] 處理 ${file.name} 時發生錯誤: ${error.message}`, 'error');
+                    }
+                };
+                reader.onerror = () => {
+                    updateStatusLog('upload', `[錯誤] 無法讀取檔案 ${file.name}。`, 'error');
+                };
+                reader.readAsText(file, 'utf-8');
+            }
+        }
+
+        function processUploadedFile(fileContent, fileName, reportTypeKey, isJson) {
+            updateStatusLog('upload', `[處理中] 正在解析 ${fileName}...`, 'processing');
+            
+            let parsedData;
+            const reportConfigs = {
+                'basic': { titles: [], parser: parseApiBasicData, keyGen: (r) => r['證券代號'] },
+                'daily': { titles: ['每日收盤行情'], parser: parseDailyData, keyGen: (r) => `${r['日期']}-${r['證券代號']}` },
+                'institutional': { titles: ['三大法人買賣超日報', '三大法人買賣超彙總表'], parser: parseInstitutionalData, keyGen: (r) => `${r['日期']}-${r['證券代號']}` },
+                'revenue': { titles: ['營業收入統計表'], parser: parseMonthlyRevenue, keyGen: (r) => `${r['資料年月']}-${r['公司代號']}` }
+            };
+            const config = reportConfigs[reportTypeKey];
+             if (!config) {
+                updateStatusLog('upload', `[錯誤] 未知的報表類型: ${reportTypeKey}`, 'error');
+                return;
+            }
+
+            if (isJson) {
+                try {
+                    let jsonData = JSON.parse(fileContent);
+                    // Handle both direct array and {payload: array} structure from old cache downloads
+                    if (jsonData.payload && Array.isArray(jsonData.payload)) {
+                        jsonData = jsonData.payload;
+                    }
+                    if (!Array.isArray(jsonData)) throw new Error("JSON 格式不符，應為物件陣列。");
+                    
+                    parsedData = (reportTypeKey === 'basic') ? parseApiBasicData(jsonData) : jsonData;
+
+                } catch (e) {
+                    updateStatusLog('upload', `[錯誤] 解析JSON檔案 ${fileName} 失敗: ${e.message}`, 'error');
+                    return;
+                }
+            } else { // isHtml
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(fileContent, 'text/html');
+                const table = findTableByTitle(doc, config.titles);
+                if (!table) {
+                    updateStatusLog('upload', `[錯誤] 在 ${fileName} 中找不到預期的表格。`, 'error');
+                    return;
+                }
+                parsedData = config.parser(table);
+                
+                if (['daily', 'institutional'].includes(reportTypeKey)) {
+                    const titleEl = doc.querySelector('thead th[colspan] div');
+                    const titleText = titleEl ? titleEl.textContent.trim() : '';
+                    const dateMatch = titleText.match(/(\d{2,3})年(\d{1,2})月(\d{1,2})日/);
+                    if (dateMatch) {
+                        const year = parseInt(dateMatch[1], 10) + 1911;
+                        const month = dateMatch[2].padStart(2, '0');
+                        const day = dateMatch[3].padStart(2, '0');
+                        const dateStr = `${year}/${month}/${day}`;
+                        parsedData.forEach(row => row['日期'] = dateStr);
+                    } else {
+                        updateStatusLog('upload', `[警告] 無法從 ${fileName} 的標題中解析日期。`, 'warning');
+                    }
+                }
+            }
+
+            if (!parsedData || parsedData.length === 0) {
+                 updateStatusLog('upload', `[警告] 從 ${fileName} 解析完成，但無有效資料。`, 'warning');
+                 return;
+            }
+            
+            mergeAndDeduplicateData(reportTypeKey, parsedData, config.keyGen);
+            updateStatusLog('upload', `[成功] ${fileName} (${getReportName(reportTypeKey)}) 匯入 ${parsedData.length} 筆資料。`, 'success');
+        }
+
+        function mergeAndDeduplicateData(key, newData, uniqueKeyGen) {
+            const existingData = stockData[key] || [];
+            const combinedData = [...existingData, ...newData];
+            
+            const dataMap = new Map();
+            combinedData.forEach(row => {
+                const id = uniqueKeyGen(row);
+                dataMap.set(id, row);
+            });
+
+            const uniqueData = Array.from(dataMap.values());
+            
+            if (key !== 'basic') {
+                uniqueData.sort((a, b) => {
+                    const dateA = toDate(a['日期'] || a['資料年月']);
+                    const dateB = toDate(b['日期'] || b['資料年月']);
+                    if (!dateA && !dateB) return 0;
+                    if (!dateA) return 1;
+                    if (!dateB) return -1;
+                    return dateB - dateA;
+                });
+            }
+
+            stockData[key] = uniqueData;
+            saveDataToCache(key, uniqueData);
+            updateAllPages();
+        }
+        
+        // --- Table Parser Helpers ---
+        function findTableByTitle(doc, titleOptions) {
+            const tables = doc.querySelectorAll('table');
+            
+            for (const titleText of titleOptions) {
+                for (const table of tables) {
+                    const caption = table.querySelector('caption');
+                    if (caption && caption.textContent.includes(titleText)) return table;
+
+                    const titleDiv = table.querySelector('thead th div.table-title, thead th div.title, thead th[colspan] div');
+                    if (titleDiv && titleDiv.textContent.includes(titleText)) return table;
+                }
+            }
+
+            for (const titleText of titleOptions) {
+                for (const table of tables) {
+                    if (table.textContent.includes(titleText) && table.querySelectorAll('tr').length > 5) {
+                        return table;
+                    }
+                }
+            }
+            return null;
+        }
+        
+        function parseApiBasicData(jsonData) {
+            if (!Array.isArray(jsonData)) {
+                console.error("Basic data is not an array:", jsonData);
+                return [];
+            }
+            return jsonData
+                .filter(item => industryMap.hasOwnProperty(item['產業別']) && item['公司代號'] && /^\d{4,}/.test(item['公司代號']))
+                .map(item => ({
+                    '日期': item['出表日期'],
+                    '證券代號': item['公司代號'],
+                    '證券名稱': item['公司簡稱'],
+                    '產業別': industryMap[item['產業別']],
+                    '上市日': item['上市日期'],
+                    '實收資本額': item['實收資本額']
+                }));
+        }
+
+        function parseDailyData(table) {
+            const headers = Array.from(table.querySelectorAll('thead tr:last-child th')).map(th => th.textContent.trim().replace(/\s+/g, ''));
+            const rows = table.querySelectorAll('tbody tr');
+            const data = [];
+            const signIndex = headers.indexOf('漲跌(+/-)');
+
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= headers.length - 1) { // Be more flexible with cell count
+                    const rowData = {};
+                    headers.forEach((header, index) => {
+                        if (!cells[index]) return;
+                        let cellText = cells[index].textContent.trim();
+                        if (header === '漲跌價差' && signIndex !== -1) {
+                            const signText = cells[signIndex]?.textContent.trim() || '';
+                            if (signText.includes('+')) {
+                                cellText = '+' + cellText;
+                            } else if (signText.includes('-') || signText.includes('－')) {
+                                cellText = '-' + cellText;
+                            }
+                        }
+                        rowData[header] = cellText;
+                    });
+                    delete rowData['漲跌(+/-)'];
+                    if (rowData['證券代號'] && /^\d{4,}/.test(rowData['證券代號'])) {
+                        data.push(rowData);
+                    }
+                }
+            });
+            return data;
+        }
+
+        function parseInstitutionalData(table) {
+            const headers = Array.from(table.querySelectorAll('thead tr:last-child th')).map(th => th.textContent.trim().replace(/\s+/g, ''));
+            const rows = table.querySelectorAll('tbody tr');
+            const data = [];
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length === headers.length) {
+                    const rowData = {};
+                    headers.forEach((header, index) => {
+                        rowData[header] = cells[index].textContent.trim();
+                    });
+                    if (rowData['證券代號'] && /^\d{4,}/.test(rowData['證券代號'])) {
+                        data.push(rowData);
+                    }
+                }
+            });
+            return data;
+        }
+        
+        function parseMonthlyRevenue(docBody) {
+            const data = [];
+            const titleEl = docBody.querySelector('font[size="5"] b');
+            const titleText = titleEl ? titleEl.textContent.trim() : '';
+            const dateMatch = titleText.match(/(\d{2,3})年(\d{1,2})月份/);
+            if (!dateMatch) return [];
+
+            const year = parseInt(dateMatch[1], 10) + 1911;
+            const month = dateMatch[2].padStart(2, '0');
+            const dataYearMonth = `${year}/${month}`;
+
+            const tables = docBody.querySelectorAll('table[border="5"]');
+            tables.forEach(table => {
+                const rows = table.querySelectorAll('tr');
+                let headers = [];
+                let headerFound = false;
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('th, td');
+                    if (cells.length > 5 && cells[0].textContent.includes('公司')) {
+                        headers = Array.from(cells).map(cell => cell.textContent.trim().replace(/\s+/g, ''));
+                        headerFound = true;
+                        return;
+                    }
+                    if (headerFound && cells.length >= headers.length - 1 && /^\d{4,}/.test(cells[0].textContent.trim())) {
+                        const rowData = {};
+                        headers.forEach((header, index) => {
+                            if (cells[index]) rowData[header] = cells[index].textContent.trim();
+                        });
+                        rowData['資料年月'] = dataYearMonth;
+                        data.push(rowData);
+                    }
+                });
+            });
+            return data;
+        }
+
+        // --- 頁面渲染與更新 ---
+        function updateAllPages() {
+            showLoading('正在更新頁面...');
+            
+            updateDashboard();
+
+            renderStockListPage();
+            renderDailyClosePage();
+            renderInstitutionalInvestorsPage();
+            renderRevenuePage();
+            populateIndustryDropdowns();
+            updateCacheManagementUI();
+            
+            const hasData = CACHE_KEYS.some(key => stockData[key].length > 0);
+            sidebarInfoText.textContent = hasData ? '資料已從快取載入。' : '無快取資料，請至資料管理頁面匯入。';
+            
+            document.getElementById('analysis-results').classList.add('hidden');
+            document.getElementById('stock-symbol').value = '';
+            document.getElementById('stock-name-display').textContent = '';
+
+            hideLoading();
+        }
+        
+        // --- Dashboard Update ---
+        function updateDashboard(targetDateStr = null) {
+            const dailyAll = stockData.daily.map(d => ({...d, dateObj: toDate(d['日期'])})).filter(d => d.dateObj);
+            if (dailyAll.length === 0) {
+                document.getElementById('dashboard-cards').innerHTML = `<div class="col-span-full bg-white p-6 rounded-xl shadow-sm text-center text-gray-500"><i data-lucide="cloud-off" class="mx-auto h-12 w-12 text-gray-400"></i><h3 class="mt-2 text-sm font-medium text-gray-900">尚無資料</h3><p class="mt-1 text-sm text-gray-500">請至「資料管理」頁面匯入數據。</p></div>`;
+                ['distribution-chart', 'sector-up-down-chart', 'sector-perf-chart', 'market-revenue-chart', 'market-inst-chart'].forEach(id => updateChart(id, null, '無資料'));
+                document.getElementById('ranking-table').innerHTML = `<div class="text-center py-4 text-gray-500 text-xs">無資料</div>`;
+                document.getElementById('dashboard-date-selector').innerHTML = '';
+                document.getElementById('dashboard-date').textContent = '無資料';
+                lucide.createIcons();
+                return;
+            }
+
+            const allDates = [...new Set(dailyAll.map(d => toDisplayDate(d.dateObj)))].sort((a,b) => toDate(b) - toDate(a));
+            
+            const dateSelector = document.getElementById('dashboard-date-selector');
+            const previousSelectedDate = dateSelector.value;
+            dateSelector.innerHTML = allDates.map(d => `<option value="${d}">${d}</option>`).join('');
+            
+            let selectedDateStr;
+            if (targetDateStr && allDates.includes(targetDateStr)) {
+                selectedDateStr = targetDateStr;
+            } else if (allDates.includes(previousSelectedDate)) {
+                selectedDateStr = previousSelectedDate;
+            } else {
+                selectedDateStr = allDates[0];
+            }
+
+            if (selectedDateStr) {
+               dateSelector.value = selectedDateStr;
+            }
+            
+            const selectedDateObj = toDate(selectedDateStr);
+            document.getElementById('dashboard-date').textContent = `資料日期: ${selectedDateStr || '無資料'}`;
+
+            const latestDayData = dailyAll.filter(d => d.dateObj.getTime() === selectedDateObj.getTime());
+            const latestDayInstData = stockData.institutional.filter(d => toDate(d['日期'])?.getTime() === selectedDateObj.getTime());
+            
+            const basicDataMap = new Map(stockData.basic.map(b => [b['證券代號'], b]));
+            const instDataMap = new Map(latestDayInstData.map(i => [i['證券代號'], i]));
+
+            const richData = latestDayData.map(d => {
+                const basic = basicDataMap.get(d['證券代號']);
+                const inst = instDataMap.get(d['證券代號']);
+                const close = parseFloat(String(d['收盤價']).replace(/,/g, ''));
+                const open = parseFloat(String(d['開盤價']).replace(/,/g, ''));
+                const change = parseFloat(d['漲跌價差']) || 0;
+                const prevClose = close - change;
+                const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
+                
+                const foreignShares = inst ? parseFloat(String(inst['外陸資買賣超股數(不含外資自營商)'] || '0').replace(/,/g, '')) : 0;
+                const itShares = inst ? parseFloat(String(inst['投信買賣超股數'] || '0').replace(/,/g, '')) : 0;
+                const dealerShares = inst ? parseFloat(String(inst['自營商買賣超股數'] || '0').replace(/,/g, '')) : 0;
+                const avgPrice = !isNaN(open) && open > 0 && !isNaN(close) ? (open + close) / 2 : (!isNaN(close) ? close : 0);
+
+                return {
+                    ...d, ...basic, ...inst, close, open, change, changePercent,
+                    volume: parseFloat(String(d['成交金額']).replace(/,/g, '')) || 0,
+                    tradeShares: parseFloat(String(d['成交股數']).replace(/,/g, '')) || 0,
+                    foreignShares, itShares, dealerShares,
+                    foreignValue: foreignShares * avgPrice,
+                    itValue: itShares * avgPrice,
+                    dealerValue: dealerShares * avgPrice,
+                };
+            }).filter(d => d['產業別'] && d['證券代號'] !== 'Y9999');
+
+
+            const advances = richData.filter(d => d.change > 0).length;
+            const declines = richData.filter(d => d.change < 0).length;
+            const flats = richData.filter(d => d.change === 0).length;
+            
+            const validPerfData = richData.filter(d => !isNaN(d.changePercent));
+            const totalChangePercent = validPerfData.reduce((acc, cur) => acc + cur.changePercent, 0);
+            const avgChangePercent = validPerfData.length > 0 ? totalChangePercent / validPerfData.length : 0;
+
+            const totalForeignValue = richData.reduce((acc, cur) => acc + (isNaN(cur.foreignValue) ? 0 : cur.foreignValue), 0);
+            const totalItValue = richData.reduce((acc, cur) => acc + (isNaN(cur.itValue) ? 0 : cur.itValue), 0);
+
+            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
+
+            document.getElementById('dashboard-cards').innerHTML = `
+                <div class="bg-white p-5 rounded-xl shadow-sm">
+                    <h3 class="text-sm font-medium text-gray-500">上市漲跌家數</h3>
+                    <div class="flex items-baseline space-x-2 mt-1">
+                        <p class="text-2xl font-bold text-red-600">${advances}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold text-gray-500">${flats}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold text-green-600">${declines}</p>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">漲 / 平 / 跌</p>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">市場平均漲跌幅</h3><p class="text-3xl font-bold mt-1 ${numColor(avgChangePercent)}">${avgChangePercent.toFixed(2)}%</p></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">外資買賣超 (億)</h3><p class="text-3xl font-bold mt-1 ${numColor(totalForeignValue)}">${formatNumber(totalForeignValue / 100000000, 2)}</p></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">投信買賣超 (億)</h3><p class="text-3xl font-bold mt-1 ${numColor(totalItValue)}">${formatNumber(totalItValue / 100000000, 2)}</p></div>
+            `;
+            lucide.createIcons();
+
+            if (!document.getElementById('ranking-controls').hasChildNodes()) {
+                setupTabControls('ranking-controls',
+                    [{key: '1D', label: '1D'}, {key: 'WTD', label: 'WTD'}, {key: 'MTD', label: 'MTD'}, {key: 'YTD', label: 'YTD'}],
+                    (period) => renderRankingTable(period, selectedDateObj)
+                );
+            } else {
+                 const currentPeriod = document.querySelector('#ranking-controls .active')?.dataset.key || '1D';
+                 renderRankingTable(currentPeriod, selectedDateObj);
+            }
+
+            const distLabels = ['> 7%', '5-7%', '3-5%', '1-3%', '0-1%', '平盤', '-1-0%', '-3--1%', '-5--3%', '-7--5%', '< -7%'];
+            const distBins = distLabels.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
+
+            richData.forEach(d => {
+                const p = d.changePercent;
+                if (p > 7) distBins['> 7%'].push(d);
+                else if (p > 5) distBins['5-7%'].push(d);
+                else if (p > 3) distBins['3-5%'].push(d);
+                else if (p > 1) distBins['1-3%'].push(d);
+                else if (p > 0) distBins['0-1%'].push(d);
+                else if (p === 0) distBins['平盤'].push(d);
+                else if (p > -1) distBins['-1-0%'].push(d);
+                else if (p > -3) distBins['-3--1%'].push(d);
+                else if (p > -5) distBins['-5--3%'].push(d);
+                else if (p > -7) distBins['-7--5%'].push(d);
+                else if (!isNaN(p)) distBins['< -7%'].push(d);
+            });
+            
+            const distData = distLabels.map(l => distBins[l].length);
+            const distColors = distLabels.map(l => {
+                if (l.startsWith('-') || l.startsWith('< -')) return '#16a34a'; // Green for negative
+                if (l === '平盤') return '#6b7280'; // Gray for flat
+                return '#dc2626'; // Red for positive
+            });
+
+            updateChart('distribution-chart', { 
+                labels: distLabels, 
+                datasets: [{ 
+                    label: '家數', 
+                    data: distData, 
+                    backgroundColor: distColors
+                }] 
+            });
+            charts['distribution-chart'].options.onClick = (evt, elements) => {
+                if (elements.length > 0) {
+                    const index = elements[0].index;
+                    const label = distLabels[index];
+                    const stocksInBin = distBins[label].sort((a,b) => b.volume - a.volume);
+                    const modalHtml = createLeaderboardTable(stocksInBin, ['證券名稱', '漲跌幅', '成交額(億)'],
+                        (s) => [
+                            `${s['證券代號']} ${s['證券名稱']}`,
+                            `<span class="${numColor(s.change)}">${s.changePercent.toFixed(2)}%</span>`,
+                            formatNumber(s.volume / 100000000, 2)
+                        ],
+                        ['text-left', 'text-right', 'text-right']
+                    );
+                    showModal(`漲跌分佈: ${label} (共 ${stocksInBin.length} 檔)`, modalHtml);
+                }
+            };
+            charts['distribution-chart'].options.plugins.tooltip.callbacks.label = (context) => {
+                return `${context.label}: ${context.parsed.x} 家`;
+            };
+            charts['distribution-chart'].options.plugins.datalabels = {
+                anchor: 'end', align: 'end',
+                formatter: (value, context) => {
+                    const total = richData.length;
+                    const percentage = total > 0 ? (value / total * 100).toFixed(1) : 0;
+                    return value > 0 ? `${value} (${percentage}%)` : '';
+                },
+                color: '#374151',
+                font: { size: 10 }
+            };
+            charts['distribution-chart'].update();
+            
+            const sectorStats = {};
+            richData.forEach(d => {
+                const industry = d['產業別'];
+                if (!industry) return;
+                if (!sectorStats[industry]) sectorStats[industry] = { up: 0, down: 0, flat: 0, total: 0, sumChange: 0 };
+                if (d.change > 0) sectorStats[industry].up++;
+                else if (d.change < 0) sectorStats[industry].down++;
+                else sectorStats[industry].flat++;
+                
+                if(!isNaN(d.changePercent)) {
+                    sectorStats[industry].total++;
+                    sectorStats[industry].sumChange += d.changePercent;
+                }
+            });
+            const sortedSectorsByPerf = Object.entries(sectorStats).map(([name, stats]) => ({
+                name, ...stats, avgChange: stats.total > 0 ? stats.sumChange / stats.total : 0
+            })).sort((a, b) => b.avgChange - a.avgChange);
+            
+            updateChart('sector-up-down-chart', {
+                labels: sortedSectorsByPerf.map(s => s.name),
+                datasets: [
+                    { label: '上漲', data: sortedSectorsByPerf.map(s => s.up), backgroundColor: 'rgba(220, 38, 38, 0.7)' },
+                    { label: '平盤', data: sortedSectorsByPerf.map(s => s.flat), backgroundColor: 'rgba(107, 114, 128, 0.7)' },
+                    { label: '下跌', data: sortedSectorsByPerf.map(s => s.down), backgroundColor: 'rgba(22, 163, 74, 0.7)' }
+                ]
+            });
+
+            updateChart('sector-perf-chart', {
+                labels: sortedSectorsByPerf.map(s => s.name),
+                datasets: [{
+                    label: '平均漲跌幅 (%)',
+                    data: sortedSectorsByPerf.map(s => s.avgChange),
+                    backgroundColor: sortedSectorsByPerf.map(s => s.avgChange > 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)')
+                }]
+            });
+            
+            renderMarketRevenueChart();
+            renderMarketInstChart();
+        }
+
+        function renderRankingTable(period, latestDateObj) {
+            showLoading(`計算 ${period} 排行...`);
+            setTimeout(() => {
+                const container = document.getElementById('ranking-table');
+                const state = dashboardState.ranking;
+                
+                const rankingData = calculatePeriodRankingData(period, latestDateObj);
+
+                const headers = [
+                    { key: 'name', label: '證券名稱', align: 'text-left' },
+                    { key: 'close', label: '收盤價', align: 'text-right' },
+                    { key: 'perf', label: '漲跌幅(%)', align: 'text-right' },
+                    { key: 'marketCap', label: '市值(億)', align: 'text-right' },
+                    { key: 'totalVolume', label: '成交額(億)', align: 'text-right' },
+                    { key: 'foreignValue', label: '外資(億)', align: 'text-right' },
+                    { key: 'itValue', label: '投信(億)', align: 'text-right' }
+                ];
+
+                const sortedData = [...rankingData].sort((a, b) => {
+                    const valA = a[state.sortColumn];
+                    const valB = b[state.sortColumn];
+                    const comparison = valA - valB;
+                    return state.sortDirection === 'asc' ? comparison : -comparison;
+                }).slice(0, 20);
+
+                const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
+                
+                const tableHTML = `
+                    <table class="w-full text-sm">
+                        <thead><tr class="border-b border-gray-200">
+                            ${headers.map(h => {
+                                let sortIcon = '';
+                                if (h.key === state.sortColumn) {
+                                    sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
+                                }
+                                return `<th class="pb-2 font-normal text-gray-500 ${h.align} sortable-header" data-key="${h.key}"><div class="flex items-center ${h.align === 'text-right' ? 'justify-end' : ''}">${h.label}${sortIcon}</div></th>`;
+                            }).join('')}
+                        </tr></thead>
+                        <tbody>
+                            ${sortedData.map(s => `
+                                <tr class="border-b border-gray-100 last:border-b-0">
+                                    <td class="py-2 text-left">${s.symbol} ${s.name}</td>
+                                    <td class="py-2 text-right"><span class="${numColor(s.change)}">${formatNumber(s.close, 2)}</span></td>
+                                    <td class="py-2 text-right"><span class="${numColor(s.perf)}">${s.perf.toFixed(2)}%</span></td>
+                                    <td class="py-2 text-right">${formatNumber(s.marketCap / 100000000, 2)}</td>
+                                    <td class="py-2 text-right">${formatNumber(s.totalVolume / 100000000, 2)}</td>
+                                    <td class="py-2 text-right"><span class="${numColor(s.foreignValue)}">${formatNumber(s.foreignValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.foreignShares / 1000, 0)})</span></span></td>
+                                    <td class="py-2 text-right"><span class="${numColor(s.itValue)}">${formatNumber(s.itValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.itShares / 1000, 0)})</span></span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                container.innerHTML = tableHTML;
+                lucide.createIcons();
+
+                container.querySelectorAll('.sortable-header').forEach(th => {
+                    th.addEventListener('click', (e) => {
+                        const key = e.currentTarget.dataset.key;
+                        if (state.sortColumn === key) {
+                            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            state.sortColumn = key;
+                            state.sortDirection = 'desc';
+                        }
+                        renderRankingTable(period, latestDateObj);
+                    });
+                });
+                hideLoading();
+            }, 10);
+        }
+
+        function calculatePeriodRankingData(period, endDate) {
+            const dailyDataBySymbol = new Map();
+            stockData.daily.forEach(d => {
+                const symbol = d['證券代號'];
+                if (!/^\d{4}$/.test(symbol)) return;
+                if (!dailyDataBySymbol.has(symbol)) dailyDataBySymbol.set(symbol, []);
+                const dailyEntry = {
+                    date: toDate(d['日期']),
+                    open: parseFloat(String(d['開盤價']).replace(/,/g, '')),
+                    close: parseFloat(String(d['收盤價']).replace(/,/g, '')),
+                    volume: parseFloat(String(d['成交金額']).replace(/,/g, '')) || 0,
+                    change: parseFloat(d['漲跌價差']) || 0
+                };
+                if(dailyEntry.date && !isNaN(dailyEntry.close)) {
+                    dailyDataBySymbol.get(symbol).push(dailyEntry);
+                }
+            });
+
+            const instDataBySymbol = new Map();
+            stockData.institutional.forEach(i => {
+                const symbol = i['證券代號'];
+                if (!instDataBySymbol.has(symbol)) instDataBySymbol.set(symbol, []);
+                const instEntry = {
+                    date: toDate(i['日期']),
+                    foreignShares: parseFloat(String(i['外陸資買賣超股數(不含外資自營商)'] || '0').replace(/,/g, '')),
+                    itShares: parseFloat(String(i['投信買賣超股數'] || '0').replace(/,/g, ''))
+                };
+                 if(instEntry.date) {
+                    instDataBySymbol.get(symbol).push(instEntry);
+                }
+            });
+            
+            let startDate;
+            const tempEndDate = new Date(endDate);
+            switch(period) {
+                case '1D':
+                    startDate = new Date(tempEndDate);
+                    break;
+                case 'WTD':
+                    startDate = new Date(tempEndDate);
+                    const dayOfWeek = startDate.getDay();
+                    startDate.setDate(startDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                    break;
+                case 'MTD':
+                    startDate = new Date(tempEndDate.getFullYear(), tempEndDate.getMonth(), 1);
+                    break;
+                case 'YTD':
+                    startDate = new Date(tempEndDate.getFullYear(), 0, 1);
+                    break;
+            }
+
+            const results = [];
+            const basicMap = new Map(stockData.basic.map(b => [b['證券代號'], b]));
+
+            for (const [symbol, history] of dailyDataBySymbol.entries()) {
+                history.sort((a,b) => a.date - b.date);
+                const periodHistory = history.filter(h => h.date >= startDate && h.date <= endDate);
+                if (periodHistory.length === 0) continue;
+
+                const endData = periodHistory[periodHistory.length - 1];
+                const startData = periodHistory[0];
+
+                if (!endData || !startData || isNaN(endData.close)) continue;
+                
+                const basicInfo = basicMap.get(symbol);
+                if (!basicInfo) continue;
+
+                let perf;
+                if (period === '1D') {
+                    const prevClose = endData.close - endData.change;
+                    perf = prevClose !== 0 ? (endData.change / prevClose) * 100 : 0;
+                } else {
+                    const firstCloseInPeriod = startData.close;
+                    if (isNaN(firstCloseInPeriod) || firstCloseInPeriod === 0) continue;
+                    perf = ((endData.close - firstCloseInPeriod) / firstCloseInPeriod) * 100;
+                }
+
+
+                const totalVolume = periodHistory.reduce((sum, day) => sum + day.volume, 0);
+                
+                const instHistory = instDataBySymbol.get(symbol)?.filter(i => i.date >= startDate && i.date <= endDate) || [];
+                let foreignShares = 0, itShares = 0, foreignValue = 0, itValue = 0;
+
+                instHistory.forEach(instDay => {
+                    const dailyMatch = periodHistory.find(d => d.date.getTime() === instDay.date.getTime());
+                    if (dailyMatch) {
+                        const avgPrice = (dailyMatch.open + dailyMatch.close) / 2;
+                        if(!isNaN(instDay.foreignShares)) {
+                            foreignShares += instDay.foreignShares;
+                            foreignValue += instDay.foreignShares * avgPrice;
+                        }
+                        if(!isNaN(instDay.itShares)) {
+                            itShares += instDay.itShares;
+                            itValue += instDay.itShares * avgPrice;
+                        }
+                    }
+                });
+                
+                const capital = parseFloat(String(basicInfo['實收資本額']).replace(/,/g, ''));
+                const marketCap = !isNaN(capital) ? (capital / 10) * endData.close : 0;
+
+                results.push({
+                    symbol,
+                    name: basicInfo['證券名稱'] || '',
+                    close: endData.close,
+                    change: endData.change,
+                    perf,
+                    marketCap,
+                    totalVolume,
+                    foreignShares,
+                    itShares,
+                    foreignValue,
+                    itValue
+                });
+            }
+            return results;
+        }
+
+        function renderMarketRevenueChart() {
+            const industry = document.getElementById('revenue-industry-filter').value;
+            const symbolsInIndustry = industry ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號'])) : null;
+            
+            const revenueData = symbolsInIndustry 
+                ? stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']))
+                : stockData.revenue;
+
+            const revenueByMonth = revenueData.reduce((acc, row) => {
+                const month = row['資料年月'];
+                const revenue = parseFloat(String(row['當月營收']).replace(/,/g, '')) || 0;
+                if (!isNaN(revenue)) {
+                    acc[month] = (acc[month] || 0) + revenue;
+                }
+                return acc;
+            }, {});
+
+            const sortedMonths = Object.keys(revenueByMonth).sort();
+            updateChart('market-revenue-chart', {
+                labels: sortedMonths,
+                datasets: [{
+                    label: `${industry || '整體市場'}總營收(億元)`,
+                    data: sortedMonths.map(m => revenueByMonth[m] / 100000),
+                    backgroundColor: '#4f46e5'
+                }]
+            });
+        }
+
+        function renderMarketInstChart() {
+            const industry = document.getElementById('inst-trend-industry-filter').value;
+            const investorType = document.getElementById('inst-trend-type-filter').value;
+            
+            const symbolsInIndustry = industry ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])) : null;
+            
+            const dailyPriceMap = new Map();
+            stockData.daily.forEach(d => {
+                const close = parseFloat(String(d['收盤價']).replace(/,/g, ''));
+                if (!isNaN(close)) {
+                    dailyPriceMap.set(`${d['日期']}-${d['證券代號']}`, close);
+                }
+            });
+
+            const dailyInstValue = {};
+            stockData.institutional.forEach(i => {
+                if (symbolsInIndustry && !symbolsInIndustry.has(i['證券代號'])) return;
+                
+                const date = i['日期'];
+                const price = dailyPriceMap.get(`${date}-${i['證券代號']}`);
+
+                if (price) {
+                    if (!dailyInstValue[date]) dailyInstValue[date] = { foreign: 0, it: 0, dealer: 0 };
+                    
+                    const f = (parseFloat(String(i['外陸資買賣超股數(不含外資自營商)']||'0').replace(/,/g,'')) || 0) * price / 100000000;
+                    const it = (parseFloat(String(i['投信買賣超股數']||'0').replace(/,/g,'')) || 0) * price / 100000000;
+                    const dl = (parseFloat(String(i['自營商買賣超股數']||'0').replace(/,/g,'')) || 0) * price / 100000000;
+
+                    dailyInstValue[date].foreign += f;
+                    dailyInstValue[date].it += it;
+                    dailyInstValue[date].dealer += dl;
+                }
+            });
+
+            const sortedDates = Object.keys(dailyInstValue).sort((a,b)=>toDate(a)-toDate(b));
+            
+            const datasets = [];
+            if (investorType === 'all' || investorType === 'foreign') {
+                datasets.push({ label: '外資(億)', data: sortedDates.map(d => dailyInstValue[d].foreign.toFixed(2)), backgroundColor: '#3b82f6' });
+            }
+            if (investorType === 'all' || investorType === 'it') {
+                datasets.push({ label: '投信(億)', data: sortedDates.map(d => dailyInstValue[d].it.toFixed(2)), backgroundColor: '#10b981' });
+            }
+            if (investorType === 'all' || investorType === 'dealer') {
+                datasets.push({ label: '自營商(億)', data: sortedDates.map(d => dailyInstValue[d].dealer.toFixed(2)), backgroundColor: '#f97316' });
+            }
+
+            updateChart('market-inst-chart', { labels: sortedDates, datasets });
+        }
+
+        function createLeaderboardTable(data, headers, rowMapper, alignments = []) {
+            if (!data || data.length === 0) return `<div class="text-center py-4 text-gray-500 text-xs">無資料</div>`;
+            return `
+                <table class="w-full text-sm">
+                    <thead><tr class="border-b border-gray-200">
+                        ${headers.map((h, i) => `<th class="pb-1 font-normal text-gray-500 ${alignments[i] || 'text-left'}">${h}</th>`).join('')}
+                    </tr></thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr class="border-b border-gray-100 last:border-b-0">
+                                ${rowMapper(item).map((cell, i) => `<td class="py-1.5 ${alignments[i] || 'text-left'}">${cell}</td>`).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function setupTabControls(containerId, tabs, callback) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = tabs.map((tab, i) => `<button class="dashboard-tab ${i === 0 ? 'active' : ''}" data-key="${tab.key}">${tab.label}</button>`).join('');
+            container.querySelectorAll('.dashboard-tab').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('active')) return;
+                    container.querySelector('.active').classList.remove('active');
+                    e.target.classList.add('active');
+                    callback(e.target.dataset.key);
+                });
+            });
+            if (tabs.length > 0) callback(tabs[0].key);
+        }
+
+        // --- Interactive Table with Pagination and Better Filters ---
+        function renderInteractiveTable(containerId, data, headers, categoricalHeaders = [], columnWidths = {}, numericHeaders = []) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (!tableStates[containerId]) {
+                tableStates[containerId] = { 
+                    sortColumn: headers[0], 
+                    sortDirection: 'asc', 
+                    filters: {},
+                    currentPage: 1,
+                    itemsPerPage: 50
+                };
+            }
+            const state = tableStates[containerId];
+
+            const processData = () => {
+                let processedData = [...data];
+
+                Object.entries(state.filters).forEach(([key, value]) => {
+                    if (value) {
+                        processedData = processedData.filter(row => 
+                            String(row[key] ?? '').toLowerCase().includes(value.toLowerCase())
+                        );
+                    }
+                });
+
+                if (state.sortColumn) {
+                    processedData.sort((a, b) => {
+                        const valA = a[state.sortColumn] || '';
+                        const valB = b[state.sortColumn] || '';
+                        
+                        const numA = parseFloat(String(valA).replace(/,/g, ''));
+                        const numB = parseFloat(String(valB).replace(/,/g, ''));
+
+                        let comparison = 0;
+                        if (!isNaN(numA) && !isNaN(numB)) {
+                            comparison = numA - numB;
+                        } else {
+                            comparison = String(valA).localeCompare(String(valB), 'zh-Hant');
+                        }
+                        return state.sortDirection === 'asc' ? comparison : -comparison;
+                    });
+                }
+                return processedData;
+            };
+
+            const render = () => {
+                if (!data || data.length === 0) {
+                    container.innerHTML = `<div class="text-center py-8 text-gray-500">無資料可顯示。</div>`;
+                    return;
+                }
+
+                const processedData = processData();
+                const totalItems = processedData.length;
+                const totalPages = Math.ceil(totalItems / state.itemsPerPage);
+                if (state.currentPage > totalPages && totalPages > 0) state.currentPage = totalPages;
+                
+                const startIndex = (state.currentPage - 1) * state.itemsPerPage;
+                const endIndex = startIndex + state.itemsPerPage;
+                const paginatedData = processedData.slice(startIndex, endIndex);
+
+                let headerHTML = '<tr>';
+                headers.forEach(h => {
+                    let sortIcon = '';
+                    if (h === state.sortColumn) {
+                        sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
+                    }
+                    const widthClass = columnWidths[h] ? ` style="width: ${columnWidths[h]}"` : '';
+                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header"${widthClass} data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
+                });
+                headerHTML += '</tr>';
+                
+                let filterHTML = '<tr>';
+                let datalistsHTML = '';
+                headers.forEach(h => {
+                    filterHTML += `<th class="p-1">`;
+                    if (categoricalHeaders.includes(h)) {
+                        const datalistId = `datalist-${containerId}-${h}`;
+                        const uniqueValues = [...new Set(data.map(row => row[h] || '').filter(Boolean))].sort();
+                        datalistsHTML += `<datalist id="${datalistId}">${uniqueValues.map(val => `<option value="${val}"></option>`).join('')}</datalist>`;
+                        filterHTML += `<input type="text" list="${datalistId}" class="filter-input" data-key="${h}" placeholder="篩選 ${h}..." value="${state.filters[h] || ''}">`;
+                    } else {
+                        filterHTML += `<input type="text" class="filter-input" data-key="${h}" placeholder="篩選..." value="${state.filters[h] || ''}">`;
+                    }
+                    filterHTML += `</th>`;
+                });
+                filterHTML += '</tr>';
+
+                let bodyHTML = paginatedData.map(row => 
+                    `<tr>${headers.map(h => {
+                        let cellValue = row[h] || '';
+                        if (h === '日期' || h === '上市日') {
+                            cellValue = formatDateForDisplay(cellValue);
+                        }
+                        else if (numericHeaders.includes(h)) {
+                            cellValue = formatNumber(cellValue, 0);
+                        } else if (h === '漲跌價差') {
+                            const changeVal = parseFloat(cellValue);
+                            const colorClass = changeVal > 0 ? 'text-red-600' : (changeVal < 0 ? 'text-green-600' : 'text-gray-700');
+                            return `<td class="px-4 py-4 whitespace-nowrap text-sm ${colorClass}">${cellValue}</td>`;
+                        }
+                        return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellValue}</td>`;
+                    }).join('')}</tr>`
+                ).join('');
+
+                const startEntry = totalItems > 0 ? startIndex + 1 : 0;
+                const endEntry = Math.min(endIndex, totalItems);
+
+                container.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <p class="text-sm text-gray-500">顯示 ${formatNumber(startEntry, 0)} 至 ${formatNumber(endEntry, 0)} 項，共 ${formatNumber(totalItems, 0)} 項資料</p>
+                    </div>
+                    <div class="overflow-auto" style="max-height: calc(75vh - 80px);">
+                        <table class="min-w-full divide-y divide-gray-200 table-fixed">
+                            <thead class="sticky-header">${headerHTML}${filterHTML}</thead>
+                            <tbody class="bg-white divide-y divide-gray-200">${bodyHTML}</tbody>
+                        </table>
+                    </div>
+                    <div id="pagination-controls-${containerId}" class="flex justify-end items-center mt-4 space-x-2"></div>
+                    ${datalistsHTML}
+                `;
+
+                renderPagination(containerId, totalItems);
+                lucide.createIcons();
+                
+                const debouncedRender = debounce(() => {
+                    state.currentPage = 1;
+                    render();
+                }, 300);
+
+                container.querySelectorAll('.sortable-header').forEach(th => {
+                    th.addEventListener('click', () => {
+                        const key = th.dataset.key;
+                        if (state.sortColumn === key) {
+                            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            state.sortColumn = key;
+                            state.sortDirection = 'asc';
+                        }
+                        render();
+                    });
+                });
+
+                container.querySelectorAll('.filter-input').forEach(input => {
+                    input.addEventListener('input', (e) => {
+                        state.filters[e.target.dataset.key] = e.target.value;
+                        debouncedRender();
+                    });
+                });
+            };
+            
+            const renderPagination = (containerId, totalItems) => {
+                 const paginationContainer = document.getElementById(`pagination-controls-${containerId}`);
+                if (!paginationContainer) return;
+                const totalPages = Math.ceil(totalItems / state.itemsPerPage);
+                if (totalPages <= 1) { paginationContainer.innerHTML = ''; return; }
+
+                let paginationHTML = `<button data-page="${state.currentPage - 1}" ${state.currentPage === 1 ? 'disabled' : ''}>« 上一頁</button>`;
+                const maxPagesToShow = 7, half = Math.floor(maxPagesToShow / 2);
+                let start = state.currentPage - half, end = state.currentPage + half;
+                if (start < 1) { end += (1-start); start = 1; }
+                if (end > totalPages) { start -= (end-totalPages); end = totalPages; }
+                start = Math.max(1, start);
+
+                if (start > 1) paginationHTML += `<button data-page="1">1</button><span class="px-2">...</span>`;
+                for (let i = start; i <= end; i++) paginationHTML += `<button data-page="${i}" class="${i === state.currentPage ? 'active' : ''}">${i}</button>`;
+                if (end < totalPages) paginationHTML += `<span class="px-2">...</span><button data-page="${totalPages}">${totalPages}</button>`;
+                paginationHTML += `<button data-page="${state.currentPage + 1}" ${state.currentPage === totalPages ? 'disabled' : ''}>下一頁 »</button>`;
+                
+                paginationContainer.innerHTML = paginationHTML;
+                paginationContainer.querySelectorAll('button').forEach(button => {
+                    button.addEventListener('click', e => {
+                        const newPage = parseInt(e.currentTarget.dataset.page, 10);
+                        if (newPage && newPage !== state.currentPage) { state.currentPage = newPage; render(); }
+                    });
+                });
+            };
+
+            render();
+        }
+
+        function renderStockListPage() {
+            renderInteractiveTable('table-container-stock-list', stockData.basic, 
+                ['日期', '證券代號', '證券名稱', '產業別', '上市日', '實收資本額'], 
+                ['產業別'],
+                {},
+                ['實收資本額']);
+        }
+        function renderDailyClosePage() {
+            const numericCols = ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交金額'];
+            renderInteractiveTable('table-container-daily', stockData.daily, 
+                ['日期', '證券代號', '證券名稱', '開盤價', '最高價', '最低價', '收盤價', '漲跌價差', '成交股數', '成交金額'],
+                [], {}, numericCols);
+        }
+        function renderInstitutionalInvestorsPage() {
+            const numericCols = ['外陸資買賣超股數(不含外資自營商)', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數'];
+            renderInteractiveTable('table-container-institutional', stockData.institutional,
+                ['日期', '證券代號', '證券名稱', ...numericCols],
+                [], {}, numericCols);
+        }
+        function renderRevenuePage() {
+            const numericCols = ['當月營收', '上月營收', '去年當月營收', '當月累計營收', '去年累計營收'];
+            renderInteractiveTable('table-container-revenue', stockData.revenue, 
+                ['資料年月', '公司代號', '公司名稱', '當月營收', '上月比較增減(%)', '去年同月增減(%)', '當月累計營收', '去年同月累計營收增減(%)', '備註'],
+                [], {}, numericCols);
+        }
+
+
+        // --- 個股分析與比較 ---
+        function analyzeStock() {
+            const symbol = document.getElementById('stock-symbol').value.trim();
+            if (!symbol) { 
+                showModal('提示', '<p>請輸入股票代號</p>'); 
+                return; 
+            }
+            
+            const stockInfo = stockData.basic.find(s => s['證券代號'] === symbol);
+            document.getElementById('stock-name-display').textContent = stockInfo ? `${symbol} ${stockInfo['證券名稱']} (${stockInfo['產業別']})` : `${symbol} 查無此股票基本資料`;
+            
+            document.getElementById('analysis-results').classList.remove('hidden');
+
+            // Render Basic Info Table
+            const infoContainer = document.getElementById('stock-basic-info-container');
+            if (stockInfo) {
+                const capital = formatNumber(stockInfo['實收資本額'], 0);
+                infoContainer.innerHTML = `
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">基本資料</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-500">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3">項目</th><th scope="col" class="px-6 py-3">內容</th>
+                                    <th scope="col" class="px-6 py-3">項目</th><th scope="col" class="px-6 py-3">內容</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="bg-white border-b">
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">證券代號</th><td class="px-6 py-4">${stockInfo['證券代號'] || ''}</td>
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">證券名稱</th><td class="px-6 py-4">${stockInfo['證券名稱'] || ''}</td>
+                                </tr>
+                                <tr class="bg-white border-b">
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">產業別</th><td class="px-6 py-4">${stockInfo['產業別'] || ''}</td>
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">上市日</th><td class="px-6 py-4">${formatDateForDisplay(stockInfo['上市日'])}</td>
+                                </tr>
+                                 <tr class="bg-white">
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">實收資本額</th><td class="px-6 py-4">${capital}</td>
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">資料日期</th><td class="px-6 py-4">${formatDateForDisplay(stockInfo['日期'])}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                infoContainer.innerHTML = `<h3 class="text-lg font-semibold text-gray-800 mb-4">基本資料</h3><div class="text-center py-4 text-gray-500">無此股票的基本資料</div>`;
+            }
+
+            const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol)
+                .map(d => ({ 
+                    time: toDate(d['日期'])?.getTime(), 
+                    open: parseFloat(String(d['開盤價']).replace(/,/g, '')), 
+                    high: parseFloat(String(d['最高價']).replace(/,/g, '')), 
+                    low: parseFloat(String(d['最低價']).replace(/,/g, '')), 
+                    close: parseFloat(String(d['收盤價']).replace(/,/g, '')),
+                    volume: (parseFloat(String(d['成交股數']).replace(/,/g, '')) || 0) / 1000
+                }))
+                .filter(d => d.time && !isNaN(d.close))
+                .sort((a,b) => a.time - b.time);
+
+            if (stockDaily.length > 0) {
+                const closingPrices = stockDaily.map(d => d.close);
+                
+                const calculateMA = (period) => {
+                    if(!period || period <= 0) return [];
+                    const ma = [];
+                    for (let i = 0; i < stockDaily.length; i++) {
+                        if (i < period - 1) {
+                            ma.push({ time: stockDaily[i].time, value: null });
+                        } else {
+                            const sum = closingPrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+                            ma.push({ time: stockDaily[i].time, value: sum / period });
+                        }
+                    }
+                    return ma;
+                };
+
+                const calculateBollingerBands = (period = 20, stdDev = 2) => {
+                    if(!period || period <= 0 || !stdDev || stdDev <= 0) return { upper: [], middle: [], lower: [] };
+                    const sma = calculateMA(period).map(d => d.value);
+                    const bands = { upper: [], middle: [], lower: [] };
+                    for (let i = period - 1; i < stockDaily.length; i++) {
+                        const slice = closingPrices.slice(i - period + 1, i + 1);
+                        const mean = sma[i];
+                        if (mean === null) continue;
+                        const variance = slice.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / period;
+                        const sd = Math.sqrt(variance);
+                        bands.upper.push({ time: stockDaily[i].time, value: mean + (sd * stdDev) });
+                        bands.middle.push({ time: stockDaily[i].time, value: mean });
+                        bands.lower.push({ time: stockDaily[i].time, value: mean - (sd * stdDev) });
+                    }
+                    const padding = Array(stockDaily.length - bands.upper.length).fill(null).map((_, i) => ({time: stockDaily[i].time, value: null}));
+                    return {
+                        upper: [...padding, ...bands.upper],
+                        middle: [...padding, ...bands.middle],
+                        lower: [...padding, ...bands.lower]
+                    };
+                };
+
+                const ma1_period = parseInt(document.getElementById('ma1-period').value, 10);
+                const ma2_period = parseInt(document.getElementById('ma2-period').value, 10);
+                const ma3_period = parseInt(document.getElementById('ma3-period').value, 10);
+                const bb_period = parseInt(document.getElementById('bb-period').value, 10);
+                const bb_stddev = parseFloat(document.getElementById('bb-stddev').value);
+
+                const taiexHistory = stockData.daily.filter(d => d['證券代號'] === 'Y9999')
+                    .map(d => ({ time: toDate(d['日期'])?.getTime(), close: parseFloat(String(d['收盤價']).replace(/,/g, '')) }))
+                    .filter(d => d.time && !isNaN(d.close))
+                    .sort((a,b) => a.time - b.time);
+
+                const firstStockDate = stockDaily[0].time;
+                const taiexStartIndex = taiexHistory.findIndex(d => d.time >= firstStockDate);
+                let normalizedTaiex = [];
+                if (taiexStartIndex !== -1) {
+                    const firstTaiexPrice = taiexHistory[taiexStartIndex].close;
+                    normalizedTaiex = taiexHistory.slice(taiexStartIndex).map(d => {
+                        const stockDay = stockDaily.find(sd => sd.time === d.time);
+                        if(stockDay) {
+                           return { time: d.time, value: ((d.close - firstTaiexPrice) / firstTaiexPrice) * 100 };
+                        }
+                        return null;
+                    }).filter(Boolean);
+                }
+                
+                const candlestickData = stockDaily.map(d => ({ x: d.time, o: d.open, h: d.high, l: d.low, c: d.close }));
+                const volumeData = stockDaily.map(d => ({x: d.time, y: d.volume}));
+                const volumeColors = stockDaily.map((d, i) => {
+                    if (i === 0) return '#a0aec0';
+                    return d.close >= stockDaily[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)';
+                });
+
+                let datasets = [
+                    { type: 'candlestick', label: symbol, data: candlestickData, yAxisID: 'yPrice' },
+                    { type: 'bar', label: '成交量(張)', data: volumeData, yAxisID: 'yVolume', backgroundColor: volumeColors }
+                ];
+                
+                if (document.getElementById('show-ma').checked) {
+                    datasets.push({ type: 'line', label: `MA${ma1_period}`, data: calculateMA(ma1_period).map(d=>({x:d.time, y:d.value})), borderColor: '#f97316', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+                    datasets.push({ type: 'line', label: `MA${ma2_period}`, data: calculateMA(ma2_period).map(d=>({x:d.time, y:d.value})), borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+                    datasets.push({ type: 'line', label: `MA${ma3_period}`, data: calculateMA(ma3_period).map(d=>({x:d.time, y:d.value})), borderColor: '#8b5cf6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+                }
+                if (document.getElementById('show-bb').checked) {
+                    const bb = calculateBollingerBands(bb_period, bb_stddev);
+                    datasets.push({ type: 'line', label: 'BB 上軌', data: bb.upper.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
+                    datasets.push({ type: 'line', label: 'BB 中軌', data: bb.middle.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderDash: [5, 5], borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
+                    datasets.push({ type: 'line', label: 'BB 下軌', data: bb.lower.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: 'rgba(139, 92, 246, 0.1)', yAxisID: 'yPrice' });
+                }
+                 if (document.getElementById('show-taiex').checked && normalizedTaiex.length > 0) {
+                    datasets.push({ type: 'line', label: '加權指數 (%)', data: normalizedTaiex.map(d=>({x:d.time, y:d.value})), borderColor: '#6b7280', borderWidth: 2, pointRadius: 0, yAxisID: 'yPercent' });
+                }
+
+                updateChart('candlestick-chart', { datasets });
+            } else { updateChart('candlestick-chart', null, `無 ${symbol} 的每日行情資料`); }
+
+            const stockInst = stockData.institutional.filter(d => d['證券代號'] === symbol).sort((a,b) => toDate(a['日期']) - toDate(b['日期']));
+            if(stockInst.length > 0) {
+                const labels = stockInst.map(d => toDate(d['日期'])?.getTime()).filter(Boolean);
+                const datasets = [
+                    { label: '外資(張)', data: stockInst.map(d => (parseFloat(String(d['外陸資買賣超股數(不含外資自營商)'] || '0').replace(/,/g, '')) || 0) / 1000), backgroundColor: '#3b82f6' },
+                    { label: '投信(張)', data: stockInst.map(d => (parseFloat(String(d['投信買賣超股數'] || '0').replace(/,/g, '')) || 0) / 1000), backgroundColor: '#10b981' },
+                    { label: '自營商(張)', data: stockInst.map(d => (parseFloat(String(d['自營商買賣超股數'] || '0').replace(/,/g, '')) || 0) / 1000), backgroundColor: '#f97316' },
+                ];
+                updateChart('institutional-investors-chart', { labels, datasets });
+            } else { updateChart('institutional-investors-chart', null, `無 ${symbol} 的三大法人資料`); }
+
+            const stockRevenue = stockData.revenue.filter(d => d['公司代號'] === symbol).sort((a,b) => toDate(a['資料年月']) - toDate(b['資料年月']));
+            if (stockRevenue.length > 0) {
+                 updateChart('revenue-trend-chart-individual', { 
+                     labels: stockRevenue.map(d => toDate(d['資料年月'])?.getTime()).filter(Boolean),
+                     datasets: [{ label: '當月營收(百萬元)', data: stockRevenue.map(d => (parseFloat(String(d['當月營收']).replace(/,/g, '')) || 0) / 1000), backgroundColor: '#8b5cf6' }]
+                 });
+            } else { updateChart('revenue-trend-chart-individual', null, `無 ${symbol} 的月營收資料`); }
+        }
+
+        function populateIndustryDropdowns() {
+            if (stockData.basic.length === 0) return;
+            const industries = [...new Set(stockData.basic.map(s => s['產業別']))].filter(Boolean).sort();
+            const selects = [
+                document.getElementById('comparison-industry'),
+                document.getElementById('revenue-industry-filter'),
+                document.getElementById('inst-trend-industry-filter')
+            ];
+            
+            selects.forEach(select => {
+                if (!select) return;
+                const isComparison = select.id === 'comparison-industry';
+                const firstOption = isComparison ? '-- 選擇產業 --' : '全產業';
+                select.innerHTML = `<option value="">${firstOption}</option>`;
+                industries.forEach(i => select.innerHTML += `<option value="${i}">${i}</option>`);
+            });
+        }
+
+        function compareStocks() {
+            const stockSymbolsInput = document.getElementById('comparison-stocks').value.split(',').map(s => s.trim()).filter(Boolean);
+            const industry = document.getElementById('comparison-industry').value;
+            let symbolsToCompare = stockSymbolsInput;
+            if (industry) {
+                const industrySymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']); 
+                symbolsToCompare = [...new Set([...symbolsToCompare, ...industrySymbols])];
+            }
+            if (symbolsToCompare.length === 0) { showModal('提示', '<p>請輸入股票代號或選擇產業</p>'); return; }
+
+            const datasets = [];
+            const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#d946ef', '#06b6d4', '#f59e0b'];
+            
+            symbolsToCompare.slice(0, 8).forEach((symbol, index) => {
+                const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol).map(d => ({...d, dateObj: toDate(d['日期'])})).filter(d => d.dateObj).sort((a,b) => a.dateObj - b.dateObj);
+                if (stockDaily.length > 0) {
+                    const firstPrice = parseFloat(String(stockDaily[0]['收盤價']).replace(/,/g, ''));
+                    if (isNaN(firstPrice) || firstPrice === 0) return;
+                    const normalizedData = stockDaily.map(d => ({ x: d.dateObj.getTime(), y: ((parseFloat(String(d['收盤價']).replace(/,/g, '')) - firstPrice) / firstPrice * 100) })).filter(d => d.x && !isNaN(d.y));
+                    const stockInfo = stockData.basic.find(s=>s['證券代號']===symbol);
+                    const label = stockInfo ? `${symbol} ${stockInfo['證券名稱']}` : symbol;
+                    datasets.push({ label, data: normalizedData, borderColor: colors[index % colors.length], tension: 0.1, pointRadius: 0, borderWidth: 2 });
+                }
+            });
+
+            updateChart('comparison-chart', { datasets });
+        }
+        
+        // --- 輔助與通用函式 ---
+        function getReportName(key) {
+            const names = { basic: '基本資料', daily: '每日行情', institutional: '三大法人', revenue: '每月營收' };
+            return names[key] || key;
+        }
+
+        function setupEventListeners() {
+            document.getElementById('analyze-stock-btn')?.addEventListener('click', analyzeStock);
+            document.getElementById('compare-btn')?.addEventListener('click', compareStocks);
+            document.getElementById('revenue-industry-filter')?.addEventListener('change', renderMarketRevenueChart);
+            document.getElementById('inst-trend-industry-filter')?.addEventListener('change', renderMarketInstChart);
+            document.getElementById('inst-trend-type-filter')?.addEventListener('change', renderMarketInstChart);
+            
+            document.getElementById('dashboard-date-selector').addEventListener('change', (e) => {
+                updateDashboard(e.target.value);
+            });
+            
+            const indicatorControls = document.getElementById('indicator-controls');
+            if(indicatorControls) {
+                indicatorControls.addEventListener('change', (e) => {
+                    // Re-run analysis if a checkbox or input changes, but only if a stock is selected
+                    if (document.getElementById('stock-symbol').value.trim()) {
+                        analyzeStock();
+                    }
+                });
+            }
+        }
+
+        function initAllCharts() {
+            const commonOptions = (extraPlugins = {}) => ({ 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top', labels: { font: { size: 10 } } },
+                    tooltip: { 
+                        bodyFont: { size: 12 }, 
+                        titleFont: { size: 14 },
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                const isHorizontal = context.chart.options.indexAxis === 'y';
+                                const value = isHorizontal ? context.parsed.x : context.parsed.y;
+                                if (value !== null) {
+                                    label += formatNumber(value, 2);
+                                }
+                                return label;
+                            }
+                        }
+                    },
+                    datalabels: { display: false },
+                    ...extraPlugins
+                }
+            });
+            const timeScale = (unit = 'day') => ({ type: 'time', time: { unit, tooltipFormat: 'yyyy-MM-dd' }, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, source: 'data' } });
+            const valueScale = (position = 'left', display = true) => ({ 
+                position,
+                display,
+                beginAtZero: false, 
+                grid: { color: '#e5e7eb' }, 
+                ticks: { 
+                    font: { size: 10 },
+                    callback: (value) => formatNumber(value, 0)
+                } 
+            });
+
+            const chartConfigs = {
+                'distribution-chart': { type: 'bar', options: { ...commonOptions(), indexAxis: 'y', scales: { x: { ...valueScale(), beginAtZero: true }, y: { ticks: { font: {size: 10} } } } } },
+                'sector-up-down-chart': { type: 'bar', options: { ...commonOptions({legend: {position: 'bottom'}}), scales: { x: { stacked: true, grid: { display: false }, ticks: {font: {size: 9}}}, y: { stacked: true, grid: { color: '#e5e7eb' }, ticks: { font: {size: 10} } } } } },
+                'sector-perf-chart': { type: 'bar', options: { ...commonOptions({legend: {display: false}}), indexAxis: 'y', scales: { x: { ticks: { callback: (v) => `${v.toFixed(1)}%` } }, y: { ticks: { font: {size: 9} } } } } },
+                'market-revenue-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: timeScale('month'), y: {...valueScale(), beginAtZero: true, ticks: { callback: (v) => `${formatNumber(v,0)}億` } } } } },
+                'market-inst-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { stacked: true, ...timeScale() }, y: { stacked: true, ...valueScale() } } } },
+                'candlestick-chart': {
+                    type: 'candlestick', 
+                    options: { 
+                        ...commonOptions({ legend: { display: false } }), 
+                        scales: { 
+                            x: timeScale(), 
+                            yPrice: { position: 'right', stack: 'stock_stack', stackWeight: 3, grid: { color: '#e5e7eb' }, ticks: { font: { size: 10 } } },
+                            yVolume: { position: 'right', stack: 'stock_stack', stackWeight: 1, grid: { display: false }, ticks: { font: { size: 9 }, callback: (v) => v > 1000 ? `${(v/1000).toFixed(0)}k` : v } },
+                            yPercent: { position: 'left', display: false, grid: { display: false }, ticks: { font: { size: 10 }, callback: (v) => `${v.toFixed(1)}%` } }
+                        } 
+                    } 
+                },
+                'institutional-investors-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { stacked: true, ...timeScale() }, y: { stacked: true, ...valueScale() } } } },
+                'revenue-trend-chart-individual': { type: 'bar', options: { ...commonOptions({ datalabels: { display: false } }), scales: { x: timeScale('month'), y: {...valueScale(), beginAtZero: true, ticks: {callback: (v) => `${formatNumber(v,0)}M`}} } } },
+                'comparison-chart': { type: 'line', options: { ...commonOptions(), scales: { x: timeScale(), y: { ...valueScale(), ticks: { callback: (v) => `${v}%` } } } } }
+            };
+
+            for (const id in chartConfigs) {
+                const canvas = document.getElementById(id);
+                if (canvas) {
+                    if(charts[id]) charts[id].destroy();
+                    charts[id] = new Chart(canvas, { ...chartConfigs[id], data: { labels: [], datasets: [] } });
+                }
+            }
+        }
+
+        function updateChart(chartId, data, placeholderText = null) {
+            const chart = charts[chartId];
+            const canvas = document.getElementById(chartId);
+            if (!chart || !canvas) return;
+
+            const container = canvas.parentElement;
+            const placeholder = container.querySelector('.chart-placeholder');
+
+            if (placeholderText || !data || !data.datasets || data.datasets.length === 0 || data.datasets.every(ds => ds.data.length === 0)) {
+                canvas.style.display = 'none';
+                if (placeholder) {
+                    placeholder.textContent = placeholderText || '無資料可顯示';
+                    placeholder.style.display = 'flex';
+                }
+            } else {
+                if (placeholder) placeholder.style.display = 'none';
+                canvas.style.display = 'block';
+                
+                // Special handling for candlestick chart axes visibility
+                if (chartId === 'candlestick-chart') {
+                    const hasTaiex = data.datasets.some(ds => ds.yAxisID === 'yPercent');
+                    chart.options.scales.yPercent.display = hasTaiex;
+                }
+
+                chart.data.labels = data.labels || (data.datasets[0]?.data.map(d => d.x));
+                chart.data.datasets = data.datasets;
+                chart.update('none');
+            }
+        }
+        
+        function setupNavigation() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const pages = document.querySelectorAll('.page-content');
+            const initialHash = window.location.hash || '#dashboard';
+            
+            const updateActiveState = (targetId) => {
+                navLinks.forEach(l => {
+                    const isActive = l.getAttribute('href') === targetId;
+                    l.classList.toggle('bg-indigo-50', isActive);
+                    l.classList.toggle('text-indigo-600', isActive);
+                    l.classList.toggle('font-bold', isActive);
+                });
+                pages.forEach(page => {
+                    const pageId = '#' + page.id;
+                    page.classList.toggle('active', pageId === targetId);
+                    if (pageId === targetId) {
+                        const link = document.querySelector(`.nav-link[href="${targetId}"]`);
+                        const pageTitle = link ? link.textContent.trim() : '儀表板';
+                        const h1 = page.querySelector('h1');
+                        if(h1) h1.textContent = pageTitle;
+                    }
+                });
+                lucide.createIcons();
+            };
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = link.getAttribute('href');
+                    if (window.location.hash !== targetId) window.location.hash = targetId;
+                });
+            });
+            
+            window.addEventListener('hashchange', () => updateActiveState(window.location.hash || '#dashboard'));
+            updateActiveState(initialHash);
+        }
+    });
+    </script>
+</body>
+</html>
