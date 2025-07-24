@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v10 - 表格修復版</title>
+    <title>台股儀表板 v10 - 錯誤修復版</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -73,7 +73,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v10</span>
+            <span>TaviStock v10.1</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -413,10 +413,10 @@
                         if (key === 'institutional') {
                             stockData[key] = data.map(row => {
                                 const newRow = {...row};
-                                newRow['外資買賣超股數'] = parseFloat(String(row['外資買賣超股數']).replace(/,/g, '')) || 0;
-                                newRow['投信買賣超股數'] = parseFloat(String(row['投信買賣超股數']).replace(/,/g, '')) || 0;
-                                newRow['自營商買賣超股數'] = parseFloat(String(row['自營商買賣超股數']).replace(/,/g, '')) || 0;
-                                newRow['三大法人買賣超股數'] = parseFloat(String(row['三大法人買賣超股數']).replace(/,/g, '')) || 0;
+                                newRow['外資買賣超股數'] = parseFloatSafe(row['外資買賣超股數']);
+                                newRow['投信買賣超股數'] = parseFloatSafe(row['投信買賣超股數']);
+                                newRow['自營商買賣超股數'] = parseFloatSafe(row['自營商買賣超股數']);
+                                newRow['三大法人買賣超股數'] = parseFloatSafe(row['三大法人買賣超股數']);
                                 return newRow;
                             });
                         } else {
@@ -439,8 +439,22 @@
         }
 
         // --- Helper Functions ---
+        
+        /**
+         * BUG FIX: 建立一個更穩健的數字解析函式
+         * 可處理逗號、正負號以及潛在的非數字字元，回傳一個浮點數或 0
+         * @param {*} value - The value to parse.
+         * @returns {number} The parsed number, or 0 if parsing fails.
+         */
+        function parseFloatSafe(value) {
+            if (value === null || typeof value === 'undefined') return 0;
+            const strValue = String(value).replace(/,/g, '');
+            const num = parseFloat(strValue);
+            return isNaN(num) ? 0 : num;
+        }
+
         function formatNumber(num, decimals = 2) {
-            const numValue = parseFloat(String(num).replace(/,/g, ''));
+            const numValue = parseFloatSafe(num);
             if (isNaN(numValue)) return num;
             return numValue.toLocaleString('en-US', {
                 minimumFractionDigits: decimals,
@@ -639,9 +653,9 @@
             const richData = latestDayData.map(d => {
                 const basic = basicDataMap.get(d['證券代號']);
                 const inst = instDataMap.get(d['證券代號']);
-                const close = parseFloat(String(d['收盤價']).replace(/,/g, ''));
-                const open = parseFloat(String(d['開盤價']).replace(/,/g, ''));
-                const change = parseFloat(d['漲跌價差']) || 0;
+                const close = parseFloatSafe(d['收盤價']);
+                const open = parseFloatSafe(d['開盤價']);
+                const change = parseFloatSafe(d['漲跌價差']);
                 const prevClose = close - change;
                 const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
                 
@@ -652,8 +666,8 @@
 
                 return {
                     ...d, ...basic, ...inst, close, open, change, changePercent,
-                    volume: parseFloat(String(d['成交金額']).replace(/,/g, '')) || 0,
-                    tradeShares: parseFloat(String(d['成交股數']).replace(/,/g, '')) || 0,
+                    volume: parseFloatSafe(d['成交金額']),
+                    tradeShares: parseFloatSafe(d['成交股數']),
                     foreignShares, itShares, dealerShares,
                     foreignValue: foreignShares * avgPrice,
                     itValue: itShares * avgPrice,
@@ -885,10 +899,10 @@
                 if (!dailyDataBySymbol.has(symbol)) dailyDataBySymbol.set(symbol, []);
                 const dailyEntry = {
                     date: toDate(d['日期']),
-                    open: parseFloat(String(d['開盤價']).replace(/,/g, '')),
-                    close: parseFloat(String(d['收盤價']).replace(/,/g, '')),
-                    volume: parseFloat(String(d['成交金額']).replace(/,/g, '')) || 0,
-                    change: parseFloat(d['漲跌價差']) || 0
+                    open: parseFloatSafe(d['開盤價']),
+                    close: parseFloatSafe(d['收盤價']),
+                    volume: parseFloatSafe(d['成交金額']),
+                    change: parseFloatSafe(d['漲跌價差'])
                 };
                 if(dailyEntry.date && !isNaN(dailyEntry.close)) {
                     dailyDataBySymbol.get(symbol).push(dailyEntry);
@@ -1000,7 +1014,7 @@
 
             const revenueByMonth = revenueData.reduce((acc, row) => {
                 const month = row['資料年月']; // Already in YYYY-MM
-                const revenue = parseFloat(String(row['當月營收']).replace(/,/g, '')) || 0;
+                const revenue = parseFloatSafe(row['當月營收']);
                 if (!isNaN(revenue)) {
                     acc[month] = (acc[month] || 0) + revenue;
                 }
@@ -1027,7 +1041,7 @@
             
             const dailyPriceMap = new Map();
             stockData.daily.forEach(d => {
-                const close = parseFloat(String(d['收盤價']).replace(/,/g, ''));
+                const close = parseFloatSafe(d['收盤價']);
                 if (!isNaN(close)) {
                     dailyPriceMap.set(`${d['日期']}-${d['證券代號']}`, close);
                 }
@@ -1143,8 +1157,8 @@
                             }
                         }
                         
-                        const numA = parseFloat(String(valA).replace(/,/g, ''));
-                        const numB = parseFloat(String(valB).replace(/,/g, ''));
+                        const numA = parseFloatSafe(valA);
+                        const numB = parseFloatSafe(valB);
 
                         let comparison = 0;
                         if (!isNaN(numA) && !isNaN(numB)) {
@@ -1180,7 +1194,8 @@
                         sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
                     }
                     const widthClass = columnWidths[h] ? ` style="width: ${columnWidths[h]}"` : '';
-                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header"${widthClass} data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
+                    // BUG FIX: Add whitespace-nowrap to prevent header text wrapping
+                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sortable-header"${widthClass} data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
                 });
                 headerHTML += '</tr>';
                 
@@ -1204,18 +1219,22 @@
                     `<tr>${headers.map(h => {
                         let cellValue = row[h] ?? '';
                         
-                        // *** FIX: Only format specific columns as dates ***
                         if (h === '日期' || h === '上市日' || h === '資料年月') {
                             cellValue = formatDateForDisplay(cellValue);
                         }
                         
-                        if (numericHeaders.includes(h)) {
-                            cellValue = formatNumber(cellValue, 0);
-                        } else if (h === '漲跌價差') {
-                            const changeVal = parseFloat(cellValue);
+                        // BUG FIX: Use parseFloatSafe and apply color coding for price change
+                        if (h === '漲跌價差') {
+                            const changeVal = parseFloatSafe(cellValue);
                             const colorClass = changeVal > 0 ? 'text-red-600' : (changeVal < 0 ? 'text-green-600' : 'text-gray-700');
+                            // Ensure the original text is displayed, but colored correctly
                             return `<td class="px-4 py-4 whitespace-nowrap text-sm ${colorClass}">${cellValue}</td>`;
                         }
+
+                        if (numericHeaders.includes(h)) {
+                            cellValue = formatNumber(cellValue, 0);
+                        }
+                        
                         return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellValue}</td>`;
                     }).join('')}</tr>`
                 ).join('');
@@ -1358,11 +1377,11 @@
             const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol)
                 .map(d => ({ 
                     time: toDate(d['日期'])?.getTime(), 
-                    open: parseFloat(String(d['開盤價']).replace(/,/g, '')), 
-                    high: parseFloat(String(d['最高價']).replace(/,/g, '')), 
-                    low: parseFloat(String(d['最低價']).replace(/,/g, '')), 
-                    close: parseFloat(String(d['收盤價']).replace(/,/g, '')),
-                    volume: (parseFloat(String(d['成交股數']).replace(/,/g, '')) || 0) / 1000
+                    open: parseFloatSafe(d['開盤價']), 
+                    high: parseFloatSafe(d['最高價']), 
+                    low: parseFloatSafe(d['最低價']), 
+                    close: parseFloatSafe(d['收盤價']),
+                    volume: parseFloatSafe(d['成交股數']) / 1000
                 }))
                 .filter(d => d.time && !isNaN(d.close))
                 .sort((a,b) => a.time - b.time);
@@ -1413,7 +1432,7 @@
                 const bb_stddev = parseFloat(document.getElementById('bb-stddev').value);
 
                 const taiexHistory = stockData.daily.filter(d => d['證券代號'] === 'Y9999')
-                    .map(d => ({ time: toDate(d['日期'])?.getTime(), close: parseFloat(String(d['收盤價']).replace(/,/g, '')) }))
+                    .map(d => ({ time: toDate(d['日期'])?.getTime(), close: parseFloatSafe(d['收盤價']) }))
                     .filter(d => d.time && !isNaN(d.close))
                     .sort((a,b) => a.time - b.time);
 
@@ -1476,7 +1495,7 @@
 
             const stockRevenue = stockData.revenue.filter(d => d['公司代號'] === symbol).sort((a,b) => toDate(a['資料年月']) - toDate(b['資料年月']));
             if (stockRevenue.length > 0) {
-                 const chartData = stockRevenue.map(d => ({ x: toDate(d['資料年月'])?.getTime(), y: (parseFloat(String(d['當月營收']).replace(/,/g, '')) || 0) / 1000000 })).filter(d => d.x);
+                 const chartData = stockRevenue.map(d => ({ x: toDate(d['資料年月'])?.getTime(), y: parseFloatSafe(d['當月營收']) / 1000000 })).filter(d => d.x);
                  updateChart('revenue-trend-chart-individual', { 
                      datasets: [{ label: '當月營收(百萬元)', data: chartData, backgroundColor: '#8b5cf6' }]
                  });
@@ -1517,9 +1536,9 @@
             symbolsToCompare.slice(0, 8).forEach((symbol, index) => {
                 const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol).map(d => ({...d, dateObj: toDate(d['日期'])})).filter(d => d.dateObj).sort((a,b) => a.dateObj - b.dateObj);
                 if (stockDaily.length > 0) {
-                    const firstPrice = parseFloat(String(stockDaily[0]['收盤價']).replace(/,/g, ''));
+                    const firstPrice = parseFloatSafe(stockDaily[0]['收盤價']);
                     if (isNaN(firstPrice) || firstPrice === 0) return;
-                    const normalizedData = stockDaily.map(d => ({ x: d.dateObj.getTime(), y: ((parseFloat(String(d['收盤價']).replace(/,/g, '')) - firstPrice) / firstPrice * 100) })).filter(d => d.x && !isNaN(d.y));
+                    const normalizedData = stockDaily.map(d => ({ x: d.dateObj.getTime(), y: ((parseFloatSafe(d['收盤價']) - firstPrice) / firstPrice * 100) })).filter(d => d.x && !isNaN(d.y));
                     const stockInfo = stockData.basic.find(s=>s['證券代號']===symbol);
                     const label = stockInfo ? `${symbol} ${stockInfo['證券名稱']}` : symbol;
                     datasets.push({ label, data: normalizedData, borderColor: colors[index % colors.length], tension: 0.1, pointRadius: 0, borderWidth: 2 });
