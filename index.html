@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v8 - Python 爬蟲版</title>
+    <title>台股儀表板 v9 - 移除市值排行</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -73,7 +73,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v8</span>
+            <span>TaviStock v9</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -317,8 +317,8 @@
                     <div class="prose prose-sm max-w-none text-gray-600 bg-gray-50 p-4 rounded-lg">
                         <p>此版本儀表板的資料更新流程已與網頁分離，請依照以下步驟操作：</p>
                         <ol>
-                            <li><strong>執行 Python 腳本</strong>：在您的電腦上執行 <code>daily_tw_stock_crawler.py</code> 腳本。它會自動抓取最新的資料，並在專案底下建立一個 <code>/data</code> 資料夾，裡面包含四個更新後的 JSON 檔案。</li>
-                            <li><strong>上傳至 GitHub</strong>：使用 Git 指令 (<code>add</code>, <code>commit</code>, <code>push</code>) 將整個專案（包含更新後的 <code>/data</code> 資料夾）推送到您的 GitHub 儲存庫。</li>
+                            <li><strong>執行 Python 腳本</strong>：在您的電腦上執行 <code>daily_tw_stock_crawler_v3.py</code> 腳本。它會自動抓取最新的資料，並在專案底下建立一個 <code>/data</code> 資料夾，裡面包含四個更新後的 JSON 檔案。</li>
+                            <li><strong>自動上傳至 GitHub</strong>：腳本執行完畢後，會自動將更新後的 <code>/data</code> 資料夾推送到您的 GitHub 儲存庫。</li>
                             <li><strong>完成</strong>：一旦 GitHub Pages 完成部署（通常需要一兩分鐘），重新整理此網頁即可看到最新的資料。</li>
                         </ol>
                         <p class="mt-4"><strong>提示</strong>：您可以設定 GitHub Actions 來定時自動執行 Python 腳本，實現全自動化更新。這是一個進階功能，需要您自行研究設定。</p>
@@ -410,7 +410,7 @@
                     const data = await response.json();
                     
                     if (Array.isArray(data) && data.length > 0) {
-                        // NEW: 對三大法人資料做預處理，將買賣超轉為數字
+                        // 對三大法人資料做預處理，將買賣超轉為數字
                         if (key === 'institutional') {
                             stockData[key] = data.map(row => {
                                 const newRow = {...row};
@@ -460,7 +460,7 @@
         const toDate = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return null;
 
-            // NEW: Handle YYYY-MM format for monthly revenue first
+            // Handle YYYY-MM format for monthly revenue first
             if (/^\d{4}-\d{2}$/.test(dateStr)) {
                 const [year, month] = dateStr.split('-').map(Number);
                 const dateObj = new Date(year, month - 1, 1);
@@ -479,7 +479,7 @@
             return `${dateObj.getFullYear()}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}`;
         };
 
-        // NEW: 簡化日期格式化函數
+        // 簡化日期格式化函數
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return '';
             // 如果是 YYYY-MM 格式，直接回傳
@@ -812,11 +812,11 @@
                 
                 const rankingData = calculatePeriodRankingData(period, latestDateObj);
 
+                // NEW: 移除市值相關的 header
                 const headers = [
                     { key: 'name', label: '證券名稱', align: 'text-left' },
                     { key: 'close', label: '收盤價', align: 'text-right' },
                     { key: 'perf', label: '漲跌幅(%)', align: 'text-right' },
-                    { key: 'marketCap', label: '市值(億)', align: 'text-right' },
                     { key: 'totalVolume', label: '成交額(億)', align: 'text-right' },
                     { key: 'foreignValue', label: '外資(億)', align: 'text-right' },
                     { key: 'itValue', label: '投信(億)', align: 'text-right' }
@@ -848,7 +848,6 @@
                                     <td class="py-2 text-left">${s.symbol} ${s.name}</td>
                                     <td class="py-2 text-right"><span class="${numColor(s.change)}">${formatNumber(s.close, 2)}</span></td>
                                     <td class="py-2 text-right"><span class="${numColor(s.perf)}">${s.perf.toFixed(2)}%</span></td>
-                                    <td class="py-2 text-right">${formatNumber(s.marketCap / 100000000, 2)}</td>
                                     <td class="py-2 text-right">${formatNumber(s.totalVolume / 100000000, 2)}</td>
                                     <td class="py-2 text-right"><span class="${numColor(s.foreignValue)}">${formatNumber(s.foreignValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.foreignShares / 1000, 0)})</span></span></td>
                                     <td class="py-2 text-right"><span class="${numColor(s.itValue)}">${formatNumber(s.itValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.itShares / 1000, 0)})</span></span></td>
@@ -875,7 +874,8 @@
                 hideLoading();
             }, 10);
         }
-
+        
+        // NEW: 移除市值計算邏輯
         function calculatePeriodRankingData(period, endDate) {
             const dailyDataBySymbol = new Map();
             stockData.daily.forEach(d => {
@@ -973,16 +973,12 @@
                     }
                 });
                 
-                const capital = parseFloat(String(basicInfo['實收資本額']).replace(/,/g, ''));
-                const marketCap = !isNaN(capital) && capital > 0 ? (capital / 10) * endData.close : 0;
-
                 results.push({
                     symbol,
                     name: basicInfo['證券名稱'] || '',
                     close: endData.close,
                     change: endData.change,
                     perf,
-                    marketCap,
                     totalVolume,
                     foreignShares,
                     itShares,
@@ -1022,14 +1018,12 @@
             });
         }
         
-        // NEW: FIX for institutional investors chart
         function renderMarketInstChart() {
             const industry = document.getElementById('inst-trend-industry-filter').value;
             const investorType = document.getElementById('inst-trend-type-filter').value;
             
             const symbolsInIndustry = industry ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])) : null;
             
-            // 建立每日股價的 Map，方便快速查找
             const dailyPriceMap = new Map();
             stockData.daily.forEach(d => {
                 const close = parseFloat(String(d['收盤價']).replace(/,/g, ''));
@@ -1038,10 +1032,8 @@
                 }
             });
 
-            // 按日期匯總三大法人的買賣超"金額"
             const dailyInstValue = {};
             stockData.institutional.forEach(i => {
-                // 如果有產業篩選，則只處理該產業的股票
                 if (symbolsInIndustry && !symbolsInIndustry.has(i['證券代號'])) return;
                 
                 const date = i['日期'];
@@ -1050,7 +1042,6 @@
                 if (price) {
                     if (!dailyInstValue[date]) dailyInstValue[date] = { foreign: 0, it: 0, dealer: 0 };
                     
-                    // 計算買賣超金額 (股數 * 收盤價)，並轉換為億元
                     const f = (i['外資買賣超股數'] || 0) * price / 100000000;
                     const it = (i['投信買賣超股數'] || 0) * price / 100000000;
                     const dl = (i['自營商買賣超股數'] || 0) * price / 100000000;
@@ -1319,10 +1310,10 @@
                 [], {}, numericCols);
         }
         function renderRevenuePage() {
-            const numericCols = ['當月營收', '上月營收', '去年當月營收', '當月累計營收', '去年累計營收'];
-            renderInteractiveTable('table-container-revenue', stockData.revenue, 
-                ['資料年月', '公司代號', '公司名稱', '當月營收', '上月比較增減(%)', '去年同月增減(%)', '當月累計營收', '去年同月累計營收增減(%)', '備註'],
-                [], {}, numericCols);
+            // NEW: 根據您提供的 JSON 檔案調整欄位
+            const headers = ['資料年月', '公司代號', '公司名稱', '當月營收', '備註'];
+            const numericCols = ['當月營收'];
+            renderInteractiveTable('table-container-revenue', stockData.revenue, headers, [], {}, numericCols);
         }
 
         // --- 個股分析與比較 ---
