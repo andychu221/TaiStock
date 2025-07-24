@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v9 - 移除市值排行</title>
+    <title>台股儀表板 v10 - 表格修復版</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -73,7 +73,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v9</span>
+            <span>TaviStock v10</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -317,11 +317,10 @@
                     <div class="prose prose-sm max-w-none text-gray-600 bg-gray-50 p-4 rounded-lg">
                         <p>此版本儀表板的資料更新流程已與網頁分離，請依照以下步驟操作：</p>
                         <ol>
-                            <li><strong>執行 Python 腳本</strong>：在您的電腦上執行 <code>daily_tw_stock_crawler_v3.py</code> 腳本。它會自動抓取最新的資料，並在專案底下建立一個 <code>/data</code> 資料夾，裡面包含四個更新後的 JSON 檔案。</li>
-                            <li><strong>自動上傳至 GitHub</strong>：腳本執行完畢後，會自動將更新後的 <code>/data</code> 資料夾推送到您的 GitHub 儲存庫。</li>
+                            <li><strong>產生資料</strong>：使用您自己的爬蟲程式，在專案根目錄下產生一個 <code>data</code> 資料夾，並確保裡面包含四個最新的 JSON 檔案。</li>
+                            <li><strong>執行上傳腳本</strong>：執行 <code>github_uploader.py</code> 腳本。它會自動讀取 <code>data</code> 資料夾的內容並推送到您的 GitHub 儲存庫。</li>
                             <li><strong>完成</strong>：一旦 GitHub Pages 完成部署（通常需要一兩分鐘），重新整理此網頁即可看到最新的資料。</li>
                         </ol>
-                        <p class="mt-4"><strong>提示</strong>：您可以設定 GitHub Actions 來定時自動執行 Python 腳本，實現全自動化更新。這是一個進階功能，需要您自行研究設定。</p>
                     </div>
                 </div>
                 <!-- Data Download Section -->
@@ -469,6 +468,12 @@
                 }
                 return null;
             }
+            
+            // Handle YYYY/MM/DD format
+            if (/^\d{4}\/\d{2}\/\d{2}$/.test(dateStr)) {
+                 const d = new Date(dateStr.replace(/\//g, '-'));
+                 return !isNaN(d) ? d : null;
+            }
 
             const d = new Date(dateStr);
             return !isNaN(d) ? d : null;
@@ -479,7 +484,6 @@
             return `${dateObj.getFullYear()}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}`;
         };
 
-        // 簡化日期格式化函數
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return '';
             // 如果是 YYYY-MM 格式，直接回傳
@@ -527,7 +531,6 @@
                 const count = stockData[key].length;
                 let lastDate = 'N/A';
                 if (count > 0) {
-                    // 尋找日期欄位，優先順序為 '日期', '資料年月', '上市日'
                     const dateKey = Object.keys(stockData[key][0]).find(k => ['日期', '資料年月', '上市日'].includes(k));
                     if (dateKey) {
                         const sortedData = [...stockData[key]].sort((a,b) => toDate(b[dateKey]) - toDate(a[dateKey]));
@@ -812,7 +815,6 @@
                 
                 const rankingData = calculatePeriodRankingData(period, latestDateObj);
 
-                // NEW: 移除市值相關的 header
                 const headers = [
                     { key: 'name', label: '證券名稱', align: 'text-left' },
                     { key: 'close', label: '收盤價', align: 'text-right' },
@@ -875,7 +877,6 @@
             }, 10);
         }
         
-        // NEW: 移除市值計算邏輯
         function calculatePeriodRankingData(period, endDate) {
             const dailyDataBySymbol = new Map();
             stockData.daily.forEach(d => {
@@ -1133,7 +1134,6 @@
                         const valA = a[state.sortColumn] || '';
                         const valB = b[state.sortColumn] || '';
                         
-                        // Handle date sorting specially
                         if (state.sortColumn === '日期' || state.sortColumn === '資料年月' || state.sortColumn === '上市日') {
                             const dateA = toDate(valA);
                             const dateB = toDate(valB);
@@ -1203,7 +1203,11 @@
                 let bodyHTML = paginatedData.map(row => 
                     `<tr>${headers.map(h => {
                         let cellValue = row[h] ?? '';
-                        cellValue = formatDateForDisplay(cellValue); // Uniform date formatting
+                        
+                        // *** FIX: Only format specific columns as dates ***
+                        if (h === '日期' || h === '上市日' || h === '資料年月') {
+                            cellValue = formatDateForDisplay(cellValue);
+                        }
                         
                         if (numericHeaders.includes(h)) {
                             cellValue = formatNumber(cellValue, 0);
@@ -1310,7 +1314,6 @@
                 [], {}, numericCols);
         }
         function renderRevenuePage() {
-            // NEW: 根據您提供的 JSON 檔案調整欄位
             const headers = ['資料年月', '公司代號', '公司名稱', '當月營收', '備註'];
             const numericCols = ['當月營收'];
             renderInteractiveTable('table-container-revenue', stockData.revenue, headers, [], {}, numericCols);
