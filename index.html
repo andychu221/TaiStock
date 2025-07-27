@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v10.3 - 錯誤修復版</title>
+    <title>台股儀表板 v18 - 優化版</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,9 +13,16 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Flatpickr Date Picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/zh-tw.js"></script>
+
 
     <!-- Custom Styles -->
     <style>
@@ -38,13 +45,49 @@
         .pagination-controls button { padding: 6px 12px; border: 1px solid #d1d5db; background-color: white; border-radius: 4px; font-size: 14px; }
         .pagination-controls button:hover:not(:disabled) { background-color: #f3f4f6; }
         .pagination-controls button.active { background-color: #4f46e5; color: white; border-color: #4f46e5; }
-        .dashboard-tab { padding: 6px 12px; font-size: 14px; font-weight: 500; border-radius: 6px; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
-        .dashboard-tab.active { background-color: #4f46e5; color: white; }
-        .dashboard-tab:not(.active) { background-color: #eef2ff; color: #4338ca; }
-        .dashboard-tab:not(.active):hover { background-color: #e0e7ff; }
+        .control-btn { padding: 6px 12px; font-size: 14px; font-weight: 500; border-radius: 6px; cursor: pointer; transition: background-color 0.2s, color 0.2s; border: 1px solid transparent;}
+        .control-btn.active { background-color: #4f46e5; color: white; }
+        .control-btn:not(.active) { background-color: #eef2ff; color: #4338ca; }
+        .control-btn:not(.active):hover { background-color: #e0e7ff; }
         /* Modal styles */
         #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 5000; display: none; }
         #modal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); z-index: 5001; width: 90%; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; }
+        /* Flatpickr custom style */
+        .flatpickr-input { background-color: white !important; }
+        /* Autocomplete styles */
+        .autocomplete-suggestions {
+            position: absolute;
+            border: 1px solid #d1d5db;
+            background-color: white;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .autocomplete-suggestions div {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+        }
+        .autocomplete-suggestions div:hover {
+            background-color: #eff6ff;
+        }
+        .stat-card {
+            background-color: white;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+        }
+        .stat-card h3 {
+            font-size: 0.75rem; /* 12px */
+            font-weight: 500;
+            color: #6b7280; /* gray-500 */
+        }
+        .stat-card p {
+            font-size: 1.125rem; /* 18px */
+            font-weight: 700;
+            margin-top: 0.25rem;
+        }
     </style>
 </head>
 <body class="flex h-screen text-gray-800">
@@ -73,7 +116,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v10.3</span>
+            <span>TaviStock v18</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -85,17 +128,11 @@
             <a href="#daily-close" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
                 <i data-lucide="calendar-days" class="mr-3 w-5 h-5"></i>每日行情
             </a>
-             <a href="#institutional-investors" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
-                <i data-lucide="users-2" class="mr-3 w-5 h-5"></i>三大法人
-            </a>
             <a href="#monthly-revenue" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
                 <i data-lucide="file-bar-chart-2" class="mr-3 w-5 h-5"></i>每月營收
             </a>
             <a href="#stock-analysis" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
                 <i data-lucide="candlestick-chart" class="mr-3 w-5 h-5"></i>個股分析
-            </a>
-            <a href="#peer-comparison" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
-                <i data-lucide="git-compare-arrows" class="mr-3 w-5 h-5"></i>同業比較
             </a>
              <div class="pt-4 mt-2 border-t">
                 <h3 class="px-4 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">資料中心</h3>
@@ -116,34 +153,34 @@
     <main class="flex-1 p-6 lg:p-8 overflow-y-auto bg-gray-50">
         <!-- Dashboard Page -->
         <div id="dashboard" class="page-content">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
                 <h1 class="text-3xl font-bold text-gray-900">市場儀表板</h1>
-                <span id="dashboard-date" class="text-sm font-medium text-gray-500"></span>
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="dashboard-industry-filter" class="filter-select text-sm p-2 border rounded-md" style="width: 150px;"></select>
+                    <div id="dashboard-period-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg"></div>
+                    <div class="relative">
+                        <input type="text" id="dashboard-date-picker" class="filter-select text-sm p-2 border rounded-md pl-10" style="width: 150px;" placeholder="選擇日期">
+                        <i data-lucide="calendar" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"></i>
+                    </div>
+                </div>
             </div>
             
-            <div id="dashboard-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-6 mb-6"></div>
-
-            <div class="grid grid-cols-1 gap-6 mb-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
-                        <h3 class="text-lg font-semibold text-gray-800">市場漲跌分佈</h3>
-                        <div>
-                            <label for="dashboard-date-selector" class="text-sm mr-2">選擇日期:</label>
-                            <select id="dashboard-date-selector" class="filter-select text-sm p-1 border rounded-md"></select>
-                        </div>
-                    </div>
-                    <div id="distribution-chart-container" class="relative h-96 cursor-pointer"><div class="chart-placeholder">無每日行情資料</div><canvas id="distribution-chart"></canvas></div>
-                </div>
-            </div>
+            <div id="dashboard-cards-row1" class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-6 mb-6"></div>
+            <div id="dashboard-cards-row2" class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6"></div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                 <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">類股漲跌家數</h3>
-                    <div id="sector-up-down-chart-container" class="relative h-96"><div class="chart-placeholder">無每日行情資料</div><canvas id="sector-up-down-chart"></canvas></div>
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">市場漲跌分佈</h3>
+                    <div id="distribution-chart-container" class="relative h-96 cursor-pointer"><div class="chart-placeholder">無每日行情資料</div><canvas id="distribution-chart"></canvas></div>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">類股平均漲跌幅</h3>
-                    <div id="sector-perf-chart-container" class="relative h-96"><div class="chart-placeholder">無每日行情資料</div><canvas id="sector-perf-chart"></canvas></div>
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">三大法人買賣超趨勢</h3>
+                    </div>
+                    <div id="market-inst-chart-container" class="relative h-96">
+                        <div class="chart-placeholder">無每日行情資料</div>
+                        <canvas id="market-inst-chart"></canvas>
+                    </div>
                 </div>
             </div>
             
@@ -151,43 +188,68 @@
                 <div class="bg-white p-6 rounded-xl shadow-sm">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-semibold text-gray-800">個股排行 Top 20</h3>
-                        <div id="ranking-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md"></div>
                     </div>
                     <div id="ranking-table" class="text-sm overflow-x-auto"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 mb-6">
+                 <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">類股漲跌家數與平均漲跌幅</h3>
+                    <div id="sector-up-down-chart-container" class="relative h-[600px] cursor-pointer"><div class="chart-placeholder">無每日行情資料</div><canvas id="sector-up-down-chart"></canvas></div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 gap-6 mb-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">各產業外資與投信買賣超 (億)</h3>
+                    <div id="inst-by-sector-chart-container" class="relative h-[600px] cursor-pointer"><div class="chart-placeholder">無每日行情資料</div><canvas id="inst-by-sector-chart"></canvas></div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                  <div class="bg-white p-6 rounded-xl shadow-sm">
                     <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
-                        <h3 class="text-lg font-semibold text-gray-800">整體市場總營收趨勢</h3>
-                        <div>
-                            <select id="revenue-industry-filter" class="filter-select text-sm p-1 border rounded-md"></select>
-                        </div>
+                        <h3 class="text-lg font-semibold text-gray-800">市場總營收趨勢</h3>
                     </div>
-                    <div id="market-revenue-chart-container" class="relative h-80"><div class="chart-placeholder">無月營收資料</div><canvas id="market-revenue-chart"></canvas></div>
+                    <div id="market-revenue-chart-container" class="relative h-80">
+                        <div class="chart-placeholder">無月營收資料</div>
+                        <canvas id="market-revenue-chart"></canvas>
+                    </div>
                 </div>
+                 <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">市場總營收季節性分析</h3>
+                    </div>
+                    <div id="market-revenue-seasonality-chart-container" class="relative h-80">
+                        <div class="chart-placeholder">無月營收資料</div>
+                        <canvas id="market-revenue-seasonality-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 mb-6">
                 <div class="bg-white p-6 rounded-xl shadow-sm">
                     <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
-                        <h3 class="text-lg font-semibold text-gray-800">三大法人買賣超趨勢</h3>
+                        <h3 class="text-lg font-semibold text-gray-800">市場廣度趨勢圖 (可拖曳)</h3>
                         <div class="flex items-center gap-2">
-                             <select id="inst-trend-industry-filter" class="filter-select text-sm p-1 border rounded-md"></select>
-                             <select id="inst-trend-type-filter" class="filter-select text-sm p-1 border rounded-md">
-                                <option value="all">全法人</option>
-                                <option value="foreign">外資</option>
-                                <option value="it">投信</option>
-                                <option value="dealer">自營商</option>
-                             </select>
+                             <input type="text" id="breadth-trend-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設近10日, 可選區間">
                         </div>
                     </div>
-                    <div id="market-inst-chart-container" class="relative h-80"><div class="chart-placeholder">無三大法人或每日行情資料</div><canvas id="market-inst-chart"></canvas></div>
+                    <div id="market-breadth-chart-container" class="relative h-96">
+                        <div class="chart-placeholder">計算中...</div>
+                        <canvas id="market-breadth-chart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Stock List Page -->
         <div id="stock-list" class="page-content">
-            <h1 class="text-3xl font-bold text-gray-900 mb-6">基本資料</h1>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">基本資料</h1>
+                <div id="table-controls-stock-list" class="flex items-center gap-2"></div>
+            </div>
             <div class="bg-white p-6 rounded-xl shadow-sm">
                 <div id="table-container-stock-list" class="overflow-auto" style="max-height: 75vh;"></div>
             </div>
@@ -195,23 +257,21 @@
 
         <!-- Daily Closing Prices Page -->
         <div id="daily-close" class="page-content">
-            <h1 class="text-3xl font-bold text-gray-900 mb-6">每日行情</h1>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">每日行情</h1>
+                <div id="table-controls-daily" class="flex items-center gap-2"></div>
+            </div>
             <div class="bg-white p-6 rounded-xl shadow-sm">
                 <div id="table-container-daily" class="overflow-auto" style="max-height: 75vh;"></div>
             </div>
         </div>
         
-        <!-- Institutional Investors Page -->
-        <div id="institutional-investors" class="page-content">
-            <h1 class="text-3xl font-bold text-gray-900 mb-6">三大法人買賣超</h1>
-             <div class="bg-white p-6 rounded-xl shadow-sm">
-                <div id="table-container-institutional" class="overflow-auto" style="max-height: 75vh;"></div>
-            </div>
-        </div>
-
         <!-- Monthly Revenue Page -->
         <div id="monthly-revenue" class="page-content">
-            <h1 class="text-3xl font-bold text-gray-900 mb-6">每月營收</h1>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">每月營收</h1>
+                <div id="table-controls-revenue" class="flex items-center gap-2"></div>
+            </div>
              <div class="bg-white p-6 rounded-xl shadow-sm">
                 <div id="table-container-revenue" class="overflow-auto" style="max-height: 75vh;"></div>
             </div>
@@ -220,33 +280,37 @@
         <!-- Individual Stock Analysis Page -->
         <div id="stock-analysis" class="page-content">
             <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <div class="flex flex-wrap items-end gap-4">
-                    <div>
-                        <label for="stock-symbol" class="font-medium text-sm">股票代號:</label>
-                        <input type="text" id="stock-symbol" placeholder="例: 2330" class="mt-1 w-40 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                <div class="flex items-center gap-4">
+                     <h1 class="text-3xl font-bold text-gray-900">個股分析</h1>
+                     <div class="relative">
+                        <label for="stock-symbol" class="font-medium text-sm sr-only">股票代號:</label>
+                        <input type="text" id="stock-symbol" placeholder="輸入代號或名稱..." class="w-60 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <div id="autocomplete-suggestions" class="autocomplete-suggestions hidden"></div>
                     </div>
-                    <button id="analyze-stock-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">分析</button>
-                    <p id="stock-name-display" class="text-lg font-semibold text-indigo-700"></p>
                 </div>
+                <p id="stock-name-display" class="text-xl font-semibold text-indigo-700"></p>
             </div>
+
             <div id="analysis-results" class="hidden">
+                 <div class="bg-white p-6 rounded-xl shadow-sm mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">關鍵統計</h3>
+                    <div id="analysis-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4"></div>
+                 </div>
+                 
                  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Left Column -->
                     <div class="lg:col-span-2 space-y-6">
                         <div class="bg-white p-6 rounded-xl shadow-sm">
-                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術分析圖</h3>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術分析圖 (可滾輪縮放/拖曳)</h3>
                             <div id="candlestick-chart-container" class="relative h-[450px]">
                                 <div class="chart-placeholder">請輸入股票代號並點擊分析</div>
                                 <canvas id="candlestick-chart" style="display: none;"></canvas>
                             </div>
                         </div>
                     </div>
-                    <!-- Right Column -->
                     <div class="lg:col-span-1 space-y-6">
                         <div class="bg-white p-6 rounded-xl shadow-sm">
                             <h3 class="text-lg font-semibold text-gray-800 mb-4">技術指標設定</h3>
                             <div id="indicator-controls" class="space-y-4 text-sm">
-                                <!-- MA controls -->
                                 <div>
                                    <label class="flex items-center font-medium"><input type="checkbox" id="show-ma" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked> <span class="ml-2">移動平均線 (MA)</span></label>
                                    <div class="grid grid-cols-3 gap-2 mt-2 pl-6">
@@ -255,7 +319,6 @@
                                      <input type="number" id="ma3-period" value="60" class="param-input text-center" title="MA3 週期">
                                    </div>
                                 </div>
-                                <!-- BB controls -->
                                 <div>
                                    <label class="flex items-center font-medium"><input type="checkbox" id="show-bb" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">布林通道 (BB)</span></label>
                                    <div class="grid grid-cols-2 gap-2 mt-2 pl-6">
@@ -263,74 +326,79 @@
                                      <input type="number" id="bb-stddev" value="2" step="0.1" class="param-input text-center" title="BB 標準差">
                                    </div>
                                 </div>
-                                <!-- TAIEX compare -->
-                                 <label class="flex items-center font-medium"><input type="checkbox" id="show-taiex" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">比較大盤 (TAIEX)</span></label>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 gap-6 mt-6">
-                    <div class="bg-white p-6 rounded-xl shadow-sm" id="stock-basic-info-container"></div>
                     <div class="bg-white p-6 rounded-xl shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-4">三大法人買賣超 (張)</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">三大法人買賣超 (張) (預設近一個月, 可拖曳)</h3>
                         <div id="institutional-investors-chart-container" class="relative h-80"><div class="chart-placeholder">無三大法人資料</div><canvas id="institutional-investors-chart" style="display: none;"></canvas></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-4">月營收趨勢 (百萬元)</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">月營收趨勢 (百萬元) (可拖曳)</h3>
                         <div id="revenue-trend-chart-container-individual" class="relative h-80"><div class="chart-placeholder">無月營收資料</div><canvas id="revenue-trend-chart-individual" style="display: none;"></canvas></div>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Peer Comparison Page -->
-        <div id="peer-comparison" class="page-content">
-            <h1 class="text-3xl font-bold text-gray-900 mb-6">同業比較</h1>
-            <div class="bg-white p-6 rounded-xl shadow-sm mb-6">
-                <div class="flex flex-wrap items-end gap-4">
-                    <div>
-                        <label for="comparison-stocks" class="font-medium text-sm">輸入股票代號 (以逗號分隔):</label>
-                        <input type="text" id="comparison-stocks" placeholder="例: 2330,2317,2454" class="mt-1 w-full md:w-72 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                            <h3 class="text-lg font-semibold text-gray-800">營收季節性分析</h3>
+                            <div id="revenue-seasonality-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md">
+                                <button class="control-btn text-xs active" data-metric="value">絕對金額</button>
+                                <button class="control-btn text-xs" data-metric="mom">月增率(MoM)</button>
+                                <button class="control-btn text-xs" data-metric="yoy">年增率(YoY)</button>
+                            </div>
+                        </div>
+                        <div id="revenue-seasonality-chart-container" class="relative h-96"><div class="chart-placeholder">無月營收資料</div><canvas id="revenue-seasonality-chart" style="display: none;"></canvas></div>
                     </div>
-                     <div>
-                        <label for="comparison-industry" class="font-medium text-sm">或選擇產業:</label>
-                        <select id="comparison-industry" class="mt-1 w-full md:w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">-- 請先擷取基本資料 --</option>
-                        </select>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                            <h3 class="text-lg font-semibold text-gray-800">同業比較 (累積報酬率) (可拖曳)</h3>
+                             <input type="text" id="peer-comparison-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設YTD, 可選區間">
+                        </div>
+                         <div id="comparison-chart-container" class="relative h-96"><div class="chart-placeholder">計算中...</div><canvas id="comparison-chart" style="display: none;"></canvas></div>
                     </div>
-                    <button id="compare-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">比較</button>
                 </div>
-            </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">正規化股價走勢比較 (%)</h3>
-                 <div id="comparison-chart-container" class="relative h-96"><div class="chart-placeholder">請選擇股票或產業進行比較</div><canvas id="comparison-chart" style="display: none;"></canvas></div>
             </div>
         </div>
         
         <!-- Data Management Page -->
         <div id="data-management" class="page-content">
             <h1 class="text-3xl font-bold text-gray-900 mb-6">資料管理中心</h1>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Data Update Workflow -->
-                <div class="bg-white p-6 rounded-xl shadow-sm space-y-6">
-                    <h2 class="text-xl font-semibold text-gray-900 mb-2">資料更新流程</h2>
-                    <div class="prose prose-sm max-w-none text-gray-600 bg-gray-50 p-4 rounded-lg">
-                        <p>此版本儀表板的資料更新流程已與網頁分離，請依照以下步驟操作：</p>
-                        <ol>
-                            <li><strong>產生資料</strong>：使用您自己的爬蟲程式，在專案根目錄下產生一個 <code>data</code> 資料夾，並確保裡面包含四個最新的 JSON 檔案。</li>
-                            <li><strong>執行上傳腳本</strong>：執行 <code>github_uploader.py</code> 腳本。它會自動讀取 <code>data</code> 資料夾的內容並推送到您的 GitHub 儲存庫。</li>
-                            <li><strong>完成</strong>：一旦 GitHub Pages 完成部署（通常需要一兩分鐘），重新整理此網頁即可看到最新的資料。</li>
-                        </ol>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="space-y-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+                        <h2 class="text-xl font-semibold text-gray-900 mb-2">資料來源</h2>
+                        <p class="text-sm text-gray-600">此儀表板目前設定為從以下公開的 GitHub 儲存庫自動載入資料：</p>
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">使用者名稱:</p>
+                            <p id="display-github-user" class="text-lg font-mono bg-gray-100 p-2 rounded-md text-gray-800"></p>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">儲存庫名稱:</p>
+                            <p id="display-github-repo" class="text-lg font-mono bg-gray-100 p-2 rounded-md text-gray-800"></p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+                        <h2 class="text-xl font-semibold text-gray-900 mb-4">資料讀取設定</h2>
+                        <p class="text-sm text-gray-500 mb-4">
+                            為了提升效能，預設僅載入近兩年每日行情資料。您可在此選擇不同的起始年份重新載入更完整的歷史資料。營收資料固定從 2020 年開始載入。
+                            <br><br>
+                            <b>效能建議：</b>資料量是影響載入速度的主因。若非必要，建議選擇較近的起始年份（如 2024 年）以獲得最佳體驗。載入 2020 年至今的完整每日行情可能需要數分鐘時間。
+                        </p>
+                        <div class="flex items-center gap-4">
+                            <div>
+                                <label for="reload-start-year" class="font-medium text-sm">選擇每日行情起始年份:</label>
+                                <select id="reload-start-year" class="mt-1 filter-select text-sm p-2 border rounded-md"></select>
+                            </div>
+                            <button id="reload-data-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm self-end">重新載入</button>
+                        </div>
                     </div>
                 </div>
-                <!-- Data Download Section -->
                 <div class="bg-white p-6 rounded-xl shadow-sm space-y-6">
                     <div>
                         <h2 class="text-xl font-semibold text-gray-900 mb-4">本機資料狀態與下載</h2>
                         <p class="text-sm text-gray-500 mb-4">以下是目前網頁載入的資料狀態。您可以下載這些 JSON 檔作為備份。</p>
-                        <div id="download-buttons-container" class="space-y-3">
-                            <!-- Download buttons will be generated here -->
-                        </div>
+                        <div id="download-buttons-container" class="space-y-3"></div>
                     </div>
                 </div>
             </div>
@@ -338,27 +406,33 @@
     </main>
 
     <script>
-    // Register the datalabels plugin globally
-    Chart.register(ChartDataLabels);
+	// 全域註冊 Chart.js 插件
+    Chart.register(ChartDataLabels, ChartZoom);
 
     window.addEventListener('load', function () {
         // --- 全域變數與設定 ---
         const stockData = {
             basic: [], 
             daily: [], 
-            institutional: [], 
-            revenue: []
-        };
-        const DATA_FILES = {
-            basic: './data/basic.json',
-            daily: './data/daily.json',
-            institutional: './data/institutional.json',
-            revenue: './data/revenue.json'
+            revenue: [],
+            dailyBySymbol: new Map(),
+            instBySymbol: new Map(),
+            revenueBySymbol: new Map(),
+            tradingDates: [],
         };
         let charts = {};
         let tableStates = {}; 
         let dashboardState = {
+            selectedDate: null,
+            selectedPeriod: '1D',
+            selectedIndustry: '',
             ranking: { sortColumn: 'totalVolume', sortDirection: 'desc' }
+        };
+        let datePickers = {};
+        
+        const githubSettings = {
+            user: 'andychu221',
+            repo: 'TaiStock'
         };
 
         // --- UI 控制元素 ---
@@ -366,7 +440,6 @@
         const loadingText = document.getElementById('loading-text');
         const sidebarInfoText = document.getElementById('sidebar-info-text');
         const modalOverlay = document.getElementById('modal-overlay');
-        const modalBox = document.getElementById('modal-box');
         const modalTitle = document.getElementById('modal-title');
         const modalContent = document.getElementById('modal-content');
         const modalCloseBtn = document.getElementById('modal-close-btn');
@@ -378,84 +451,214 @@
             setupNavigation();
             initAllCharts();
             setupModal();
+            displayRepoSettings();
+            setupDataReloadControls();
             
-            await loadInitialDataFromRepo();
-            
-            updateDownloadButtonsUI();
-            setupEventListeners();
-            
-            updateAllPages();
+            const defaultStartYear = 2024;
+            await reloadData(defaultStartYear, true); 
             
             hideLoading();
         }
 
-        // Run the app
         initializeApp();
         
-        /**
-         * BUG FIX: 建立一個更穩健的數字解析函式
-         * 可處理逗號、正負號以及 "--" 等特殊字串
-         * @param {*} value - The value to parse.
-         * @returns {number} The parsed number, or NaN if parsing fails.
-         */
+        async function reloadData(startYear, isInitialLoad = false) {
+            showLoading(`正在從 ${startYear} 年開始載入資料...`);
+            
+            Object.keys(stockData).forEach(key => {
+                if(Array.isArray(stockData[key])) stockData[key] = [];
+                else if(stockData[key] instanceof Map) stockData[key].clear();
+            });
+
+            await loadAllData(startYear);
+            
+            showLoading('正在處理資料...');
+            preprocessData();
+            updateDownloadButtonsUI();
+            setupEventListeners(); 
+            
+            initializeDashboardControls();
+            await refreshDashboard();
+            
+            renderStaticPages();
+            
+            if (isInitialLoad) {
+                const stockSymbolInput = document.getElementById('stock-symbol');
+                stockSymbolInput.value = '2330';
+                analyzeStock('2330');
+            }
+            
+            hideLoading();
+            
+            if (!isInitialLoad) {
+                showModal('成功', `<p>已成功載入從 ${startYear} 年至今的每日行情，以及從 2020 年至今的營收資料！</p>`);
+            }
+        }
+
         function parseFloatSafe(value) {
             if (value === null || typeof value === 'undefined') return NaN;
             let strValue = String(value).trim().replace(/,/g, '');
-            if (strValue === '--' || strValue === '') return NaN;
+            if (strValue === '--' || strValue === '' || strValue.toUpperCase().startsWith('X')) return NaN;
             const num = parseFloat(strValue);
-            return num; // Returns a number or NaN
+            return num;
+        }
+        
+        async function loadAllData(startYear) {
+            sidebarInfoText.textContent = '準備從 GitHub 載入資料...';
+            if (!githubSettings.user || !githubSettings.repo) {
+                sidebarInfoText.textContent = '尚未設定 GitHub 儲存庫。';
+                showModal('錯誤', '<p>GitHub 使用者名稱或儲存庫名稱未在程式碼中設定。</p>');
+                return;
+            }
+
+            try {
+                const dataUrlPrefix = `https://raw.githubusercontent.com/${githubSettings.user}/${githubSettings.repo}/main/data`;
+                const apiRepoUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/contents/data`;
+
+                const basicResponse = await fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`);
+                if (basicResponse.ok) {
+                    const sanitizedText = (await basicResponse.text()).replace(/\bNaN\b/g, 'null');
+                    stockData.basic = JSON.parse(sanitizedText);
+                } else {
+                    console.warn('無法載入 basic.json');
+                }
+                
+                const allPromises = [];
+                
+                const apiResponse = await fetch(apiRepoUrl);
+                if (!apiResponse.ok) throw new Error(`無法讀取 GitHub repo 根目錄: ${apiResponse.status}`);
+                const yearFolders = await apiResponse.json();
+
+                for (const yearItem of yearFolders) {
+                    if (yearItem.type !== 'dir' || !/^\d{4}$/.test(yearItem.name)) continue;
+                    const year = parseInt(yearItem.name, 10);
+
+                    const monthContentsResponse = await fetch(yearItem.url);
+                    if (!monthContentsResponse.ok) continue;
+                    const monthFolders = await monthContentsResponse.json();
+
+                    for (const monthItem of monthFolders) {
+                        if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
+                            const month = monthItem.name;
+                            
+                            if (year >= 2020) {
+                                const revenueUrl = `${dataUrlPrefix}/${year}/${month}/revenue.json?v=${new Date().getTime()}`;
+                                allPromises.push(fetch(revenueUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'revenue', data})));
+                            }
+                            
+                            if (year >= startYear) {
+                                const dailyUrl = `${dataUrlPrefix}/${year}/${month}/daily.json?v=${new Date().getTime()}`;
+                                allPromises.push(fetch(dailyUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'daily', data})));
+                            }
+                        }
+                    }
+                }
+                
+                let filesProcessed = 0;
+                const totalFilesToLoad = allPromises.length;
+                const updateLoadingProgress = () => {
+                    filesProcessed++;
+                    showLoading(`載入資料... (${filesProcessed}/${totalFilesToLoad})`);
+                };
+
+                const wrappedPromises = allPromises.map(p => p.then(res => {
+                    updateLoadingProgress();
+                    return res;
+                }));
+
+                const results = await Promise.all(wrappedPromises);
+
+                stockData.daily = [];
+                stockData.revenue = [];
+
+                results.forEach(result => {
+                    if (result && result.data && Array.isArray(result.data)) {
+                        stockData[result.type].push(...result.data);
+                    }
+                });
+                
+                const totalRecords = stockData.daily.length + stockData.revenue.length + stockData.basic.length;
+                sidebarInfoText.textContent = totalRecords > 0 ? `已從 GitHub 載入資料。` : '未找到初始資料。';
+
+            } catch (error) {
+                console.error('載入資料失敗:', error);
+                sidebarInfoText.textContent = '資料載入失敗。';
+                showModal('錯誤', `<p>資料載入過程中發生錯誤。</p><p class="mt-2 text-sm text-gray-500">錯誤訊息: ${error.message}</p>`);
+            }
         }
 
-        // --- 從 GitHub Repo 載入初始資料 ---
-        async function loadInitialDataFromRepo() {
-            sidebarInfoText.textContent = '正在從 GitHub 載入資料...';
-            const dataKeys = Object.keys(DATA_FILES);
-            let filesLoadedCount = 0;
+        function preprocessData() {
+            stockData.tradingDates = [...new Set(stockData.daily.map(d => d['日期']))].sort((a,b) => toDate(b) - toDate(a));
 
-            for (const key of dataKeys) {
-                try {
-                    showLoading(`正在載入 ${getReportName(key)}...`);
-                    const response = await fetch(`${DATA_FILES[key]}?v=${new Date().getTime()}`);
-                    
-                    if (!response.ok) {
-                        throw new Error(`網路回應錯誤: ${response.status} ${response.statusText}`);
-                    }
-                    
-                    const responseText = await response.text();
-                    let data;
-                    try {
-                        // BUG FIX: 在解析前，將無效的 NaN 替換為有效的 null
-                        const sanitizedText = responseText.replace(/\bNaN\b/g, 'null');
-                        data = JSON.parse(sanitizedText);
-                    } catch (e) {
-                         console.error(`解析 ${key}.json 失敗!`, `錯誤: ${e.message}`, `收到的內容:`, responseText);
-                         throw new Error(`檔案 ${key}.json 格式錯誤，不是有效的 JSON。`);
-                    }
-
-                    if (Array.isArray(data) && data.length > 0) {
-                        // BUG FIX: 不再預先轉換數字，保留原始字串格式
-                        stockData[key] = data;
-                        filesLoadedCount++;
-                    } else {
-                         console.warn(`檔案 ${DATA_FILES[key]} 為空或格式不正確。`);
-                    }
-                } catch (error) {
-                    console.error(`從 Repo 載入 ${key} 資料失敗:`, error);
-                }
-            }
+            stockData.dailyBySymbol.clear();
+            stockData.instBySymbol.clear();
+            stockData.revenueBySymbol.clear();
             
-            if (filesLoadedCount > 0) {
-                 sidebarInfoText.textContent = `已從 GitHub 載入 ${filesLoadedCount} 個資料檔。`;
-            } else {
-                 sidebarInfoText.textContent = '未找到初始資料，請檢查 data 資料夾與檔案。';
+            stockData.daily.forEach(d => {
+                const symbol = d['證券代號'];
+                if (!/^\d{4}/.test(symbol)) return;
+
+                if (!stockData.dailyBySymbol.has(symbol)) {
+                    stockData.dailyBySymbol.set(symbol, []);
+                }
+                const dailyEntry = {
+                    date: toDate(d['日期']),
+                    open: parseFloatSafe(d['開盤價']),
+                    high: parseFloatSafe(d['最高價']),
+                    low: parseFloatSafe(d['最低價']),
+                    close: parseFloatSafe(d['收盤價']),
+                    change: parseFloatSafe(d['漲跌價差']) || 0,
+                    volume: parseFloatSafe(d['成交金額']),
+                    shares: parseFloatSafe(d['成交股數'])
+                };
+                if(dailyEntry.date && !isNaN(dailyEntry.close)) {
+                    stockData.dailyBySymbol.get(symbol).push(dailyEntry);
+                }
+
+                if (!stockData.instBySymbol.has(symbol)) {
+                    stockData.instBySymbol.set(symbol, []);
+                }
+                const instEntry = {
+                    date: toDate(d['日期']),
+                    foreign: parseFloatSafe(d['外資買賣超股數']),
+                    it: parseFloatSafe(d['投信買賣超股數']),
+                    dealer: parseFloatSafe(d['自營商買賣超股數']),
+                };
+                 if(instEntry.date && (!isNaN(instEntry.foreign) || !isNaN(instEntry.it) || !isNaN(instEntry.dealer))) {
+                    stockData.instBySymbol.get(symbol).push(instEntry);
+                }
+            });
+
+            stockData.revenue.forEach(r => {
+                const symbol = r['公司代號'];
+                if (!symbol) return;
+                if (!stockData.revenueBySymbol.has(symbol)) {
+                    stockData.revenueBySymbol.set(symbol, []);
+                }
+                const revenueEntry = {
+                    date: toDate(r['資料年月']),
+                    value: parseFloatSafe(r['當月營收'])
+                };
+                if(revenueEntry.date && !isNaN(revenueEntry.value)) {
+                    stockData.revenueBySymbol.get(symbol).push(revenueEntry);
+                }
+            });
+
+            for (const history of stockData.dailyBySymbol.values()) {
+                history.sort((a,b) => a.date - b.date);
+            }
+            for (const history of stockData.instBySymbol.values()) {
+                history.sort((a,b) => a.date - b.date);
+            }
+            for (const history of stockData.revenueBySymbol.values()) {
+                history.sort((a,b) => a.date - b.date);
             }
         }
 
         // --- Helper Functions ---
         function formatNumber(num, decimals = 2) {
             const numValue = (typeof num === 'number' && !isNaN(num)) ? num : parseFloatSafe(num);
-            if (isNaN(numValue)) return num; // Return original if not a number (e.g., '--')
-            
+            if (isNaN(numValue)) return '--';
             return numValue.toLocaleString('en-US', {
                 minimumFractionDigits: decimals,
                 maximumFractionDigits: decimals
@@ -471,25 +674,21 @@
         }
         
         const toDate = (dateStr) => {
+            if (dateStr instanceof Date) return dateStr;
             if (!dateStr || typeof dateStr !== 'string') return null;
-
-            // Handle YYYY-MM format for monthly revenue first
-            if (/^\d{4}-\d{2}$/.test(dateStr)) {
+            
+            let d;
+            if (/^\d{4}\/\d{2}\/\d{2}$/.test(dateStr)) {
+                 d = new Date(dateStr.replace(/\//g, '-') + 'T00:00:00');
+            } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                 d = new Date(dateStr + 'T00:00:00');
+            } else if (/^\d{4}-\d{2}$/.test(dateStr)) {
                 const [year, month] = dateStr.split('-').map(Number);
-                const dateObj = new Date(year, month - 1, 1);
-                if (dateObj.getFullYear() === year && dateObj.getMonth() === month - 1) {
-                    return dateObj;
-                }
-                return null;
+                d = new Date(year, month - 1, 1);
+            } else {
+                d = new Date(dateStr);
             }
             
-            // Handle YYYY/MM/DD format
-            if (/^\d{4}\/\d{2}\/\d{2}$/.test(dateStr)) {
-                 const d = new Date(dateStr.replace(/\//g, '-'));
-                 return !isNaN(d) ? d : null;
-            }
-
-            const d = new Date(dateStr);
             return !isNaN(d) ? d : null;
         };
 
@@ -500,10 +699,7 @@
 
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return '';
-            // 如果是 YYYY-MM 格式，直接回傳
-            if (/^\d{4}-\d{2}$/.test(dateStr)) {
-                return dateStr;
-            }
+            if (/^\d{4}-\d{2}$/.test(dateStr)) return dateStr;
             const dateObj = toDate(dateStr);
             return dateObj ? toDisplayDate(dateObj) : dateStr;
         };
@@ -534,22 +730,31 @@
         function hideLoading() {
             loadingOverlay.style.display = 'none';
         }
+        
+        function displayRepoSettings() {
+            document.getElementById('display-github-user').textContent = githubSettings.user;
+            document.getElementById('display-github-repo').textContent = githubSettings.repo;
+        }
 
-        // --- 資料管理 UI ---
         function updateDownloadButtonsUI() {
             const container = document.getElementById('download-buttons-container');
             if (!container) return;
-            
             container.innerHTML = '';
-            Object.keys(stockData).forEach(key => {
-                const count = stockData[key].length;
+            ['basic', 'daily', 'revenue'].forEach(key => {
+                const data = stockData[key];
+                const count = data.length;
                 let lastDate = 'N/A';
-                if (count > 0) {
-                    const dateKey = Object.keys(stockData[key][0]).find(k => ['日期', '資料年月', '上市日'].includes(k));
+                if (count > 0 && data[0]) {
+                    const dateKey = Object.keys(data[0]).find(k => ['日期', '資料年月', '上市日'].includes(k));
                     if (dateKey) {
-                        const sortedData = [...stockData[key]].sort((a,b) => toDate(b[dateKey]) - toDate(a[dateKey]));
-                        const dateVal = sortedData[0][dateKey];
-                        lastDate = formatDateForDisplay(dateVal);
+                        const sortedData = [...data].sort((a,b) => {
+                            const dateA = toDate(a[dateKey]);
+                            const dateB = toDate(b[dateKey]);
+                            if (!dateA) return 1;
+                            if (!dateB) return -1;
+                            return dateB - dateA;
+                        });
+                        if(sortedData.length > 0) lastDate = formatDateForDisplay(sortedData[0][dateKey]);
                     }
                 }
                 
@@ -589,349 +794,122 @@
             }
         }
         
-        // --- 頁面渲染與更新 ---
-        function updateAllPages() {
-            showLoading('正在更新頁面...');
-            
-            updateDashboard();
-
+        function renderStaticPages() {
             renderStockListPage();
             renderDailyClosePage();
-            renderInstitutionalInvestorsPage();
             renderRevenuePage();
             populateIndustryDropdowns();
-            updateDownloadButtonsUI();
-            
             document.getElementById('analysis-results').classList.add('hidden');
             document.getElementById('stock-symbol').value = '';
             document.getElementById('stock-name-display').textContent = '';
-
-            hideLoading();
         }
         
-        // --- Dashboard Update ---
-        function updateDashboard(targetDateStr = null) {
-            const dailyAll = stockData.daily.map(d => ({...d, dateObj: toDate(d['日期'])})).filter(d => d.dateObj);
-            if (dailyAll.length === 0) {
-                document.getElementById('dashboard-cards').innerHTML = `<div class="col-span-full bg-white p-6 rounded-xl shadow-sm text-center text-gray-500"><i data-lucide="cloud-off" class="mx-auto h-12 w-12 text-gray-400"></i><h3 class="mt-2 text-sm font-medium text-gray-900">尚無資料</h3><p class="mt-1 text-sm text-gray-500">請執行 Python 腳本更新資料。</p></div>`;
-                ['distribution-chart', 'sector-up-down-chart', 'sector-perf-chart', 'market-revenue-chart', 'market-inst-chart'].forEach(id => updateChart(id, null, '無資料'));
+        // --- Dashboard ---
+        function initializeDashboardControls() {
+            const industryFilter = document.getElementById('dashboard-industry-filter');
+            const industries = [...new Set(stockData.basic.map(s => s['產業別']))].filter(Boolean).sort();
+            industryFilter.innerHTML = `<option value="">全產業</option>` + industries.map(i => `<option value="${i}">${i}</option>`).join('');
+            industryFilter.value = dashboardState.selectedIndustry;
+            industryFilter.addEventListener('change', (e) => {
+                dashboardState.selectedIndustry = e.target.value;
+                refreshDashboard();
+            });
+            
+            const periodContainer = document.getElementById('dashboard-period-controls');
+            const periods = [{key: '1D', label: '1D'}, {key: 'WTD', label: 'WTD'}, {key: 'MTD', label: 'MTD'}, {key: 'YTD', label: 'YTD'}];
+            periodContainer.innerHTML = periods.map(p => `<button class="control-btn text-xs" data-key="${p.key}">${p.label}</button>`).join('');
+            const activeBtn = periodContainer.querySelector(`[data-key="${dashboardState.selectedPeriod}"]`);
+            if(activeBtn) activeBtn.classList.add('active');
+            else periodContainer.querySelector(`[data-key="1D"]`).classList.add('active');
+
+            periodContainer.querySelectorAll('.control-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (e.currentTarget.classList.contains('active')) return;
+                    const currentActive = periodContainer.querySelector('.active');
+                    if(currentActive) currentActive.classList.remove('active');
+                    e.currentTarget.classList.add('active');
+                    dashboardState.selectedPeriod = e.currentTarget.dataset.key;
+                    if(datePickers.dashboard && dashboardState.selectedDate) {
+                        datePickers.dashboard.setDate(dashboardState.selectedDate, false);
+                    }
+                    refreshDashboard();
+                });
+            });
+
+            if (stockData.tradingDates.length > 0) {
+                if (!dashboardState.selectedDate || !stockData.tradingDates.includes(toDisplayDate(dashboardState.selectedDate))) {
+                    dashboardState.selectedDate = toDate(stockData.tradingDates[0]);
+                }
+                datePickers.dashboard = flatpickr("#dashboard-date-picker", {
+                    enable: stockData.tradingDates.map(d => toDisplayDate(toDate(d))),
+                    defaultDate: dashboardState.selectedDate,
+                    dateFormat: "Y/m/d",
+                    locale: "zh_tw",
+                    onChange: function(selectedDates) {
+                        if(selectedDates[0]) {
+                            dashboardState.selectedDate = selectedDates[0];
+                            const currentActive = periodContainer.querySelector('.active');
+                            if(currentActive) currentActive.classList.remove('active');
+                            periodContainer.querySelector('[data-key="1D"]').classList.add('active');
+                            dashboardState.selectedPeriod = '1D';
+                            refreshDashboard();
+                        }
+                    },
+                });
+            } else {
+                 document.getElementById('dashboard-date-picker').placeholder = "無交易日資料";
+            }
+            
+            datePickers.breadthTrend = flatpickr("#breadth-trend-datepicker", {
+                mode: "range", dateFormat: "Y-m-d", locale: "zh_tw",
+                onChange: () => renderMarketBreadthChart()
+            });
+        }
+
+        async function refreshDashboard() {
+            if (!dashboardState.selectedDate || stockData.daily.length === 0) {
+                 document.getElementById('dashboard-cards-row1').innerHTML = `<div class="col-span-full bg-white p-6 rounded-xl shadow-sm text-center text-gray-500"><i data-lucide="cloud-off" class="mx-auto h-12 w-12 text-gray-400"></i><h3 class="mt-2 text-sm font-medium text-gray-900">尚無資料</h3><p class="mt-1 text-sm text-gray-500">請檢查 GitHub 設定或上傳資料。</p></div>`;
+                 document.getElementById('dashboard-cards-row2').innerHTML = '';
+                ['distribution-chart', 'sector-up-down-chart', 'inst-by-sector-chart', 'market-revenue-chart', 'market-inst-chart', 'market-breadth-chart', 'market-revenue-seasonality-chart'].forEach(id => updateChart(id, null, '無資料'));
                 document.getElementById('ranking-table').innerHTML = `<div class="text-center py-4 text-gray-500 text-xs">無資料</div>`;
-                document.getElementById('dashboard-date-selector').innerHTML = '';
-                document.getElementById('dashboard-date').textContent = '無資料';
                 lucide.createIcons();
                 return;
             }
-
-            const allDates = [...new Set(dailyAll.map(d => toDisplayDate(d.dateObj)))].sort((a,b) => toDate(b) - toDate(a));
+            showLoading(`正在切換並計算 ${dashboardState.selectedPeriod} 的數據...`);
             
-            const dateSelector = document.getElementById('dashboard-date-selector');
-            const previousSelectedDate = dateSelector.value;
-            dateSelector.innerHTML = allDates.map(d => `<option value="${d}">${d}</option>`).join('');
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const { selectedPeriod, selectedDate, selectedIndustry } = dashboardState;
             
-            let selectedDateStr;
-            if (targetDateStr && allDates.includes(targetDateStr)) {
-                selectedDateStr = targetDateStr;
-            } else if (allDates.includes(previousSelectedDate)) {
-                selectedDateStr = previousSelectedDate;
-            } else {
-                selectedDateStr = allDates[0];
-            }
-
-            if (selectedDateStr) {
-               dateSelector.value = selectedDateStr;
-            }
+            const periodData = calculatePeriodData(selectedPeriod, selectedDate, selectedIndustry);
             
-            const selectedDateObj = toDate(selectedDateStr);
-            document.getElementById('dashboard-date').textContent = `資料日期: ${selectedDateStr || '無資料'}`;
-
-            const latestDayData = dailyAll.filter(d => d.dateObj.getTime() === selectedDateObj.getTime());
-            const latestDayInstData = stockData.institutional.filter(d => toDate(d['日期'])?.getTime() === selectedDateObj.getTime());
+            renderDashboardCards(periodData);
+            renderDistributionChart(periodData);
+            renderSectorCharts(periodData);
+            renderInstBySectorChart(periodData);
+            renderRankingTable(periodData);
             
-            const basicDataMap = new Map(stockData.basic.map(b => [b['證券代號'], b]));
-            const instDataMap = new Map(latestDayInstData.map(i => [i['證券代號'], i]));
-
-            const richData = latestDayData.map(d => {
-                const basic = basicDataMap.get(d['證券代號']);
-                const inst = instDataMap.get(d['證券代號']);
-                const close = parseFloatSafe(d['收盤價']);
-                const open = parseFloatSafe(d['開盤價']);
-                const change = parseFloatSafe(d['漲跌價差']);
-                const prevClose = close - change;
-                const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
-                
-                const foreignShares = inst ? parseFloatSafe(inst['外資買賣超股數']) : 0;
-                const itShares = inst ? parseFloatSafe(inst['投信買賣超股數']) : 0;
-                const dealerShares = inst ? parseFloatSafe(inst['自營商買賣超股數']) : 0;
-                const avgPrice = !isNaN(open) && open > 0 && !isNaN(close) ? (open + close) / 2 : (!isNaN(close) ? close : 0);
-
-                return {
-                    ...d, ...basic, ...inst, close, open, change, changePercent,
-                    volume: parseFloatSafe(d['成交金額']),
-                    tradeShares: parseFloatSafe(d['成交股數']),
-                    foreignShares, itShares, dealerShares,
-                    foreignValue: foreignShares * avgPrice,
-                    itValue: itShares * avgPrice,
-                    dealerValue: dealerShares * avgPrice,
-                };
-            }).filter(d => d['產業別'] && d['證券代號'] !== 'Y9999');
-
-
-            const advances = richData.filter(d => d.change > 0).length;
-            const declines = richData.filter(d => d.change < 0).length;
-            const flats = richData.filter(d => d.change === 0).length;
-            
-            const validPerfData = richData.filter(d => !isNaN(d.changePercent));
-            const totalChangePercent = validPerfData.reduce((acc, cur) => acc + cur.changePercent, 0);
-            const avgChangePercent = validPerfData.length > 0 ? totalChangePercent / validPerfData.length : 0;
-
-            const totalForeignValue = richData.reduce((acc, cur) => acc + (isNaN(cur.foreignValue) ? 0 : cur.foreignValue), 0);
-            const totalItValue = richData.reduce((acc, cur) => acc + (isNaN(cur.itValue) ? 0 : cur.itValue), 0);
-
-            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
-
-            document.getElementById('dashboard-cards').innerHTML = `
-                <div class="bg-white p-5 rounded-xl shadow-sm">
-                    <h3 class="text-sm font-medium text-gray-500">上市漲跌家數</h3>
-                    <div class="flex items-baseline space-x-2 mt-1">
-                        <p class="text-2xl font-bold text-red-600">${advances}</p>
-                        <span class="text-gray-400">/</span>
-                        <p class="text-2xl font-bold text-gray-500">${flats}</p>
-                        <span class="text-gray-400">/</span>
-                        <p class="text-2xl font-bold text-green-600">${declines}</p>
-                    </div>
-                    <p class="text-xs text-gray-400 mt-1">漲 / 平 / 跌</p>
-                </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">市場平均漲跌幅</h3><p class="text-3xl font-bold mt-1 ${numColor(avgChangePercent)}">${avgChangePercent.toFixed(2)}%</p></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">外資買賣超 (億)</h3><p class="text-3xl font-bold mt-1 ${numColor(totalForeignValue)}">${formatNumber(totalForeignValue / 100000000, 2)}</p></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">投信買賣超 (億)</h3><p class="text-3xl font-bold mt-1 ${numColor(totalItValue)}">${formatNumber(totalItValue / 100000000, 2)}</p></div>
-            `;
-            lucide.createIcons();
-
-            if (!document.getElementById('ranking-controls').hasChildNodes()) {
-                setupTabControls('ranking-controls',
-                    [{key: '1D', label: '1D'}, {key: 'WTD', label: 'WTD'}, {key: 'MTD', label: 'MTD'}, {key: 'YTD', label: 'YTD'}],
-                    (period) => renderRankingTable(period, selectedDateObj)
-                );
-            } else {
-                 const currentPeriod = document.querySelector('#ranking-controls .active')?.dataset.key || '1D';
-                 renderRankingTable(currentPeriod, selectedDateObj);
-            }
-
-            const distLabels = ['> 7%', '5-7%', '3-5%', '1-3%', '0-1%', '平盤', '-1-0%', '-3--1%', '-5--3%', '-7--5%', '< -7%'];
-            const distBins = distLabels.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
-
-            richData.forEach(d => {
-                const p = d.changePercent;
-                if (p > 7) distBins['> 7%'].push(d);
-                else if (p > 5) distBins['5-7%'].push(d);
-                else if (p > 3) distBins['3-5%'].push(d);
-                else if (p > 1) distBins['1-3%'].push(d);
-                else if (p > 0) distBins['0-1%'].push(d);
-                else if (p === 0) distBins['平盤'].push(d);
-                else if (p > -1) distBins['-1-0%'].push(d);
-                else if (p > -3) distBins['-3--1%'].push(d);
-                else if (p > -5) distBins['-5--3%'].push(d);
-                else if (p > -7) distBins['-7--5%'].push(d);
-                else if (!isNaN(p)) distBins['< -7%'].push(d);
-            });
-            
-            const distData = distLabels.map(l => distBins[l].length);
-            const distColors = distLabels.map(l => {
-                if (l.startsWith('-') || l.startsWith('< -')) return '#16a34a'; // Green for negative
-                if (l === '平盤') return '#6b7280'; // Gray for flat
-                return '#dc2626'; // Red for positive
-            });
-
-            updateChart('distribution-chart', { 
-                labels: distLabels, 
-                datasets: [{ 
-                    label: '家數', 
-                    data: distData, 
-                    backgroundColor: distColors
-                }] 
-            });
-            charts['distribution-chart'].options.onClick = (evt, elements) => {
-                if (elements.length > 0) {
-                    const index = elements[0].index;
-                    const label = distLabels[index];
-                    const stocksInBin = distBins[label].sort((a,b) => b.volume - a.volume);
-                    const modalHtml = createLeaderboardTable(stocksInBin, ['證券名稱', '漲跌幅', '成交額(億)'],
-                        (s) => [
-                            `${s['證券代號']} ${s['證券名稱']}`,
-                            `<span class="${numColor(s.change)}">${s.changePercent.toFixed(2)}%</span>`,
-                            formatNumber(s.volume / 100000000, 2)
-                        ],
-                        ['text-left', 'text-right', 'text-right']
-                    );
-                    showModal(`漲跌分佈: ${label} (共 ${stocksInBin.length} 檔)`, modalHtml);
-                }
-            };
-            charts['distribution-chart'].options.plugins.tooltip.callbacks.label = (context) => {
-                return `${context.label}: ${context.parsed.x} 家`;
-            };
-            charts['distribution-chart'].options.plugins.datalabels = {
-                anchor: 'end', align: 'end',
-                formatter: (value, context) => {
-                    const total = richData.length;
-                    const percentage = total > 0 ? (value / total * 100).toFixed(1) : 0;
-                    return value > 0 ? `${value} (${percentage}%)` : '';
-                },
-                color: '#374151',
-                font: { size: 10 }
-            };
-            charts['distribution-chart'].update();
-            
-            const sectorStats = {};
-            richData.forEach(d => {
-                const industry = d['產業別'];
-                if (!industry) return;
-                if (!sectorStats[industry]) sectorStats[industry] = { up: 0, down: 0, flat: 0, total: 0, sumChange: 0 };
-                if (d.change > 0) sectorStats[industry].up++;
-                else if (d.change < 0) sectorStats[industry].down++;
-                else sectorStats[industry].flat++;
-                
-                if(!isNaN(d.changePercent)) {
-                    sectorStats[industry].total++;
-                    sectorStats[industry].sumChange += d.changePercent;
-                }
-            });
-            const sortedSectorsByPerf = Object.entries(sectorStats).map(([name, stats]) => ({
-                name, ...stats, avgChange: stats.total > 0 ? stats.sumChange / stats.total : 0
-            })).sort((a, b) => b.avgChange - a.avgChange);
-            
-            updateChart('sector-up-down-chart', {
-                labels: sortedSectorsByPerf.map(s => s.name),
-                datasets: [
-                    { label: '上漲', data: sortedSectorsByPerf.map(s => s.up), backgroundColor: 'rgba(220, 38, 38, 0.7)' },
-                    { label: '平盤', data: sortedSectorsByPerf.map(s => s.flat), backgroundColor: 'rgba(107, 114, 128, 0.7)' },
-                    { label: '下跌', data: sortedSectorsByPerf.map(s => s.down), backgroundColor: 'rgba(22, 163, 74, 0.7)' }
-                ]
-            });
-
-            updateChart('sector-perf-chart', {
-                labels: sortedSectorsByPerf.map(s => s.name),
-                datasets: [{
-                    label: '平均漲跌幅 (%)',
-                    data: sortedSectorsByPerf.map(s => s.avgChange),
-                    backgroundColor: sortedSectorsByPerf.map(s => s.avgChange > 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)')
-                }]
-            });
-            
-            renderMarketRevenueChart();
+            refreshMarketRevenueChart();
             renderMarketInstChart();
+            renderMarketBreadthChart();
+            renderMarketRevenueSeasonalityChart();
+
+            hideLoading();
         }
 
-        function renderRankingTable(period, latestDateObj) {
-            showLoading(`計算 ${period} 排行...`);
-            setTimeout(() => {
-                const container = document.getElementById('ranking-table');
-                const state = dashboardState.ranking;
-                
-                const rankingData = calculatePeriodRankingData(period, latestDateObj);
-
-                const headers = [
-                    { key: 'name', label: '證券名稱', align: 'text-left' },
-                    { key: 'close', label: '收盤價', align: 'text-right' },
-                    { key: 'perf', label: '漲跌幅(%)', align: 'text-right' },
-                    { key: 'totalVolume', label: '成交額(億)', align: 'text-right' },
-                    { key: 'foreignValue', label: '外資(億)', align: 'text-right' },
-                    { key: 'itValue', label: '投信(億)', align: 'text-right' }
-                ];
-
-                const sortedData = [...rankingData].sort((a, b) => {
-                    const valA = a[state.sortColumn];
-                    const valB = b[state.sortColumn];
-                    const comparison = valA - valB;
-                    return state.sortDirection === 'asc' ? comparison : -comparison;
-                }).slice(0, 20);
-
-                const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
-                
-                const tableHTML = `
-                    <table class="w-full text-sm">
-                        <thead><tr class="border-b border-gray-200">
-                            ${headers.map(h => {
-                                let sortIcon = '';
-                                if (h.key === state.sortColumn) {
-                                    sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
-                                }
-                                return `<th class="pb-2 font-normal text-gray-500 ${h.align} sortable-header" data-key="${h.key}"><div class="flex items-center ${h.align === 'text-right' ? 'justify-end' : ''}">${h.label}${sortIcon}</div></th>`;
-                            }).join('')}
-                        </tr></thead>
-                        <tbody>
-                            ${sortedData.map(s => `
-                                <tr class="border-b border-gray-100 last:border-b-0">
-                                    <td class="py-2 text-left">${s.symbol} ${s.name}</td>
-                                    <td class="py-2 text-right"><span class="${numColor(s.change)}">${formatNumber(s.close, 2)}</span></td>
-                                    <td class="py-2 text-right"><span class="${numColor(s.perf)}">${s.perf.toFixed(2)}%</span></td>
-                                    <td class="py-2 text-right">${formatNumber(s.totalVolume / 100000000, 2)}</td>
-                                    <td class="py-2 text-right"><span class="${numColor(s.foreignValue)}">${formatNumber(s.foreignValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.foreignShares / 1000, 0)})</span></span></td>
-                                    <td class="py-2 text-right"><span class="${numColor(s.itValue)}">${formatNumber(s.itValue / 100000000, 2)} <span class="text-xs text-gray-400">(${formatNumber(s.itShares / 1000, 0)})</span></span></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-                container.innerHTML = tableHTML;
-                lucide.createIcons();
-
-                container.querySelectorAll('.sortable-header').forEach(th => {
-                    th.addEventListener('click', (e) => {
-                        const key = e.currentTarget.dataset.key;
-                        if (state.sortColumn === key) {
-                            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
-                        } else {
-                            state.sortColumn = key;
-                            state.sortDirection = 'desc';
-                        }
-                        renderRankingTable(period, latestDateObj);
-                    });
-                });
-                hideLoading();
-            }, 10);
-        }
-        
-        function calculatePeriodRankingData(period, endDate) {
-            const dailyDataBySymbol = new Map();
-            stockData.daily.forEach(d => {
-                const symbol = d['證券代號'];
-                if (!/^\d{4}/.test(symbol)) return;
-                if (!dailyDataBySymbol.has(symbol)) dailyDataBySymbol.set(symbol, []);
-                const dailyEntry = {
-                    date: toDate(d['日期']),
-                    open: parseFloatSafe(d['開盤價']),
-                    close: parseFloatSafe(d['收盤價']),
-                    volume: parseFloatSafe(d['成交金額']),
-                    change: parseFloatSafe(d['漲跌價差'])
-                };
-                if(dailyEntry.date && !isNaN(dailyEntry.close)) {
-                    dailyDataBySymbol.get(symbol).push(dailyEntry);
-                }
-            });
-
-            const instDataBySymbol = new Map();
-            stockData.institutional.forEach(i => {
-                const symbol = i['證券代號'];
-                if (!instDataBySymbol.has(symbol)) instDataBySymbol.set(symbol, []);
-                const instEntry = {
-                    date: toDate(i['日期']),
-                    foreignShares: parseFloatSafe(i['外資買賣超股數']),
-                    itShares: parseFloatSafe(i['投信買賣超股數'])
-                };
-                 if(instEntry.date) {
-                    instDataBySymbol.get(symbol).push(instEntry);
-                }
-            });
-            
+        function calculatePeriodData(period, endDate, industry) {
             let startDate;
-            const tempEndDate = new Date(endDate);
+            const tempEndDate = toDate(endDate);
+            if (!tempEndDate) return [];
+            tempEndDate.setHours(0, 0, 0, 0);
+
             switch(period) {
                 case '1D':
                     startDate = new Date(tempEndDate);
                     break;
                 case 'WTD':
                     startDate = new Date(tempEndDate);
-                    const dayOfWeek = startDate.getDay();
+                    const dayOfWeek = startDate.getDay(); // 0=Sun, 1=Mon
                     startDate.setDate(startDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
                     break;
                 case 'MTD':
@@ -941,92 +919,526 @@
                     startDate = new Date(tempEndDate.getFullYear(), 0, 1);
                     break;
             }
+            startDate.setHours(0, 0, 0, 0);
+
+            const basicMap = new Map(stockData.basic.map(b => [b['證券代號'], b]));
+            let symbolsToProcess = industry 
+                ? stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])
+                : Array.from(stockData.dailyBySymbol.keys());
 
             const results = [];
-            const basicMap = new Map(stockData.basic.map(b => [b['證券代號'], b]));
 
-            for (const [symbol, history] of dailyDataBySymbol.entries()) {
-                history.sort((a,b) => a.date - b.date);
-                const periodHistory = history.filter(h => h.date >= startDate && h.date <= endDate);
-                if (periodHistory.length === 0) continue;
+            for (const symbol of symbolsToProcess) {
+                const dailyHistory = stockData.dailyBySymbol.get(symbol);
+                if (!dailyHistory) continue;
 
-                const endData = periodHistory[periodHistory.length - 1];
-                const startData = periodHistory[0];
+                const periodDaily = dailyHistory.filter(h => h.date >= startDate && h.date <= tempEndDate);
+                if (periodDaily.length === 0) continue;
+
+                const endData = periodDaily[periodDaily.length - 1];
+                const startData = periodDaily[0];
 
                 if (!endData || !startData || isNaN(endData.close)) continue;
                 
                 const basicInfo = basicMap.get(symbol);
-                if (!basicInfo) continue;
+                if (!basicInfo || basicInfo['證券代號'] === 'Y9999') continue;
 
-                let perf;
+                const prevClose = endData.close - endData.change;
+                const perf1D = prevClose !== 0 ? (endData.change / prevClose) * 100 : 0;
+                
+                let perfPeriod;
                 if (period === '1D') {
-                    const prevClose = endData.close - endData.change;
-                    perf = prevClose !== 0 ? (endData.change / prevClose) * 100 : 0;
+                    perfPeriod = perf1D;
                 } else {
                     const firstCloseInPeriod = startData.close;
-                    if (isNaN(firstCloseInPeriod) || firstCloseInPeriod === 0) continue;
-                    perf = ((endData.close - firstCloseInPeriod) / firstCloseInPeriod) * 100;
+                    if (isNaN(firstCloseInPeriod) || firstCloseInPeriod === 0) {
+                        perfPeriod = 0;
+                    } else {
+                        perfPeriod = ((endData.close - firstCloseInPeriod) / firstCloseInPeriod) * 100;
+                    }
                 }
 
-                const totalVolume = periodHistory.reduce((sum, day) => sum + day.volume, 0);
+                const totalVolume = periodDaily.reduce((sum, day) => sum + (day.volume || 0), 0);
                 
-                const instHistory = instDataBySymbol.get(symbol)?.filter(i => i.date >= startDate && i.date <= endDate) || [];
-                let foreignShares = 0, itShares = 0, foreignValue = 0, itValue = 0;
-
-                instHistory.forEach(instDay => {
-                    const dailyMatch = periodHistory.find(d => d.date.getTime() === instDay.date.getTime());
-                    if (dailyMatch && !isNaN(dailyMatch.open) && !isNaN(dailyMatch.close)) {
-                        const avgPrice = (dailyMatch.open + dailyMatch.close) / 2;
-                        if(!isNaN(instDay.foreignShares)) {
-                            foreignShares += instDay.foreignShares;
-                            foreignValue += instDay.foreignShares * avgPrice;
+                let foreignValue = 0, itValue = 0, dealerValue = 0;
+                let foreignShares = 0, itShares = 0;
+                const instHistory = stockData.instBySymbol.get(symbol);
+                if (instHistory) {
+                    const periodInst = instHistory.filter(i => i.date >= startDate && i.date <= tempEndDate);
+                    periodInst.forEach(instDay => {
+                        const dailyDataForDay = periodDaily.find(d => d.date.getTime() === instDay.date.getTime());
+                        if (dailyDataForDay && !isNaN(dailyDataForDay.close)) {
+                            const price = dailyDataForDay.close;
+                            foreignValue += (instDay.foreign || 0) * price;
+                            itValue += (instDay.it || 0) * price;
+                            dealerValue += (instDay.dealer || 0) * price;
+                            foreignShares += (instDay.foreign || 0);
+                            itShares += (instDay.it || 0);
                         }
-                        if(!isNaN(instDay.itShares)) {
-                            itShares += instDay.itShares;
-                            itValue += instDay.itShares * avgPrice;
-                        }
-                    }
-                });
+                    });
+                }
                 
                 results.push({
                     symbol,
                     name: basicInfo['證券名稱'] || '',
+                    industry: basicInfo['產業別'] || '',
                     close: endData.close,
                     change: endData.change,
-                    perf,
+                    perf: perfPeriod,
                     totalVolume,
-                    foreignShares,
-                    itShares,
-                    foreignValue,
-                    itValue
+                    foreignValue, itValue, dealerValue,
+                    foreignShares, itShares
                 });
             }
             return results;
         }
+        
+        function renderDashboardCards(periodData) {
+            const container1 = document.getElementById('dashboard-cards-row1');
+            const container2 = document.getElementById('dashboard-cards-row2');
 
-        function renderMarketRevenueChart() {
-            const industry = document.getElementById('revenue-industry-filter').value;
-            const symbolsInIndustry = industry ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號'])) : null;
+            if (periodData.length === 0) {
+                container1.innerHTML = `<div class="col-span-full text-center py-4">在所選範圍內無資料</div>`;
+                container2.innerHTML = '';
+                return;
+            }
             
-            const revenueData = symbolsInIndustry 
-                ? stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']))
-                : stockData.revenue;
+            const advances = periodData.filter(d => d.perf > 0).length;
+            const declines = periodData.filter(d => d.perf < 0).length;
+            const flats = periodData.length - advances - declines;
+            
+            const validPerfData = periodData.filter(d => !isNaN(d.perf));
+            const totalChangePercent = validPerfData.reduce((acc, cur) => acc + cur.perf, 0);
+            const avgChangePercent = validPerfData.length > 0 ? totalChangePercent / validPerfData.length : 0;
+
+            const totalForeignValue = periodData.reduce((acc, cur) => acc + (cur.foreignValue || 0), 0) / 100000000;
+            const totalItValue = periodData.reduce((acc, cur) => acc + (cur.itValue || 0), 0) / 100000000;
+            const totalDealerValue = periodData.reduce((acc, cur) => acc + (cur.dealerValue || 0), 0) / 100000000;
+            
+            const industry = dashboardState.selectedIndustry;
+            const symbolsForMA = industry 
+                ? stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])
+                : Array.from(stockData.dailyBySymbol.keys());
+            const maStats = calculateMAStats(symbolsForMA, dashboardState.selectedDate);
+            const highLowData = calculate52WeekHighLow(dashboardState.selectedDate, symbolsForMA);
+
+            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
+            
+            container1.innerHTML = `
+                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-3">
+                    <h3 class="text-sm font-medium text-gray-500">漲跌家數</h3>
+                    <div class="flex items-baseline space-x-2 mt-1">
+                        <p class="text-2xl font-bold text-red-600">${advances}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold text-gray-500">${flats}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold text-green-600">${declines}</p>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-2">
+                    <h3 class="text-sm font-medium text-gray-500">平均漲跌幅</h3>
+                    <p class="text-2xl font-bold mt-1 ${numColor(avgChangePercent)}">${avgChangePercent.toFixed(2)}%</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-3">
+                    <h3 class="text-sm font-medium text-gray-500">外/投/自營 (億)</h3>
+                    <div class="flex items-baseline justify-start space-x-2 mt-1 text-2xl font-bold">
+                        <span class="${numColor(totalForeignValue)}">${totalForeignValue.toFixed(1)}</span>
+                        <span class="text-gray-400 text-sm">/</span>
+                        <span class="${numColor(totalItValue)}">${totalItValue.toFixed(1)}</span>
+                        <span class="text-gray-400 text-sm">/</span>
+                        <span class="${numColor(totalDealerValue)}">${totalDealerValue.toFixed(1)}</span>
+                    </div>
+                </div>
+            `;
+
+            container2.innerHTML = `
+                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 20MA</h3><p class="text-2xl font-bold mt-1">${maStats.above20} <span class="text-base font-medium text-gray-500">(${maStats.pct20}%)</span></p></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 50MA</h3><p class="text-2xl font-bold mt-1">${maStats.above50} <span class="text-base font-medium text-gray-500">(${maStats.pct50}%)</span></p></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 200MA</h3><p class="text-2xl font-bold mt-1">${maStats.above200} <span class="text-base font-medium text-gray-500">(${maStats.pct200}%)</span></p></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">52週新高/新低</h3><p class="text-2xl font-bold mt-1"><span class="text-red-500">${highLowData.high}</span> / <span class="text-green-500">${highLowData.low}</span></p></div>
+            `;
+        }
+
+
+        function calculateMA(closingPrices, period) {
+            if (!period || period <= 0 || closingPrices.length < period) return NaN;
+            const sum = closingPrices.slice(-period).reduce((a, b) => a + b, 0);
+            return sum / period;
+        };
+
+        function calculateMAStats(symbols, endDate) {
+            let above20 = 0, above50 = 0, above200 = 0;
+            let totalStocks = 0;
+
+            for (const symbol of symbols) {
+                const history = stockData.dailyBySymbol.get(symbol);
+                if (!history) continue;
+
+                const relevantHistory = history.filter(h => h.date <= endDate);
+                if (relevantHistory.length === 0) continue;
+                
+                const lastClose = relevantHistory[relevantHistory.length - 1].close;
+                if (isNaN(lastClose)) continue;
+
+                totalStocks++;
+                const closingPrices = relevantHistory.map(h => h.close);
+
+                const ma20 = calculateMA(closingPrices, 20);
+                const ma50 = calculateMA(closingPrices, 50);
+                const ma200 = calculateMA(closingPrices, 200);
+
+                if (!isNaN(ma20) && lastClose > ma20) above20++;
+                if (!isNaN(ma50) && lastClose > ma50) above50++;
+                if (!isNaN(ma200) && lastClose > ma200) above200++;
+            }
+            
+            return {
+                above20, above50, above200,
+                pct20: totalStocks > 0 ? (above20 / totalStocks * 100).toFixed(1) : 0,
+                pct50: totalStocks > 0 ? (above50 / totalStocks * 100).toFixed(1) : 0,
+                pct200: totalStocks > 0 ? (above200 / totalStocks * 100).toFixed(1) : 0,
+            };
+        }
+        
+        function calculate52WeekHighLow(endDate, symbols) {
+            let highCount = 0, lowCount = 0;
+            const oneYearAgo = new Date(endDate);
+            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+            for (const symbol of symbols) {
+                const history = stockData.dailyBySymbol.get(symbol);
+                if (!history || history.length === 0) continue;
+                
+                const endData = history.find(h => h.date.getTime() === endDate.getTime());
+                if (!endData || isNaN(endData.close)) continue;
+
+                const yearHistory = history.filter(h => h.date >= oneYearAgo && h.date <= endDate);
+                if (yearHistory.length === 0) continue;
+
+                const yearHigh = Math.max(...yearHistory.map(h => h.high).filter(h => !isNaN(h)));
+                const yearLow = Math.min(...yearHistory.map(h => h.low).filter(l => !isNaN(l)));
+
+                if (endData.close >= yearHigh) highCount++;
+                if (endData.close <= yearLow) lowCount++;
+            }
+            return { high: highCount, low: lowCount };
+        }
+        
+        function getDistributionBins(period) {
+            switch(period) {
+                case 'WTD':
+                case 'MTD':
+                case 'YTD':
+                case '1D':
+                default:
+                    return {
+                        labels: ['> 7%', '5-7%', '3-5%', '1-3%', '0-1%', '平盤', '-1-0%', '-3--1%', '-5--3%', '-7--5%', '< -7%'],
+                        bins: [7, 5, 3, 1, 0, 0, -1, -3, -5, -7]
+                    };
+            }
+        }
+
+        function renderDistributionChart(periodData) {
+            const { labels, bins } = getDistributionBins(dashboardState.selectedPeriod);
+            const distBins = labels.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
+
+            periodData.forEach(d => {
+                const p = d.perf;
+                if(isNaN(p)) return;
+
+                if (p > bins[0]) distBins[labels[0]].push(d);
+                else if (p > bins[1]) distBins[labels[1]].push(d);
+                else if (p > bins[2]) distBins[labels[2]].push(d);
+                else if (p > bins[3]) distBins[labels[3]].push(d);
+                else if (p > 0) distBins[labels[4]].push(d);
+                else if (p === 0) distBins[labels[5]].push(d);
+                else if (p > bins[6]) distBins[labels[6]].push(d);
+                else if (p > bins[7]) distBins[labels[7]].push(d);
+                else if (p > bins[8]) distBins[labels[8]].push(d);
+                else if (p > bins[9]) distBins[labels[9]].push(d);
+                else distBins[labels[10]].push(d);
+            });
+            
+            const distData = labels.map(l => distBins[l].length);
+            
+            const distColors = labels.map(l => {
+                if (l.includes('<') || (l.includes('-') && l.indexOf('-') === 0)) {
+                    return '#16a34a'; 
+                } else if (l === '平盤') {
+                    return '#6b7280';
+                } else {
+                    return '#dc2626';
+                }
+            });
+
+            updateChart('distribution-chart', { 
+                labels: labels, 
+                datasets: [{ label: '家數', data: distData, backgroundColor: distColors }] 
+            });
+            if (charts['distribution-chart']) {
+                charts['distribution-chart'].options.onClick = (evt, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const label = labels[index];
+                        const stocksInBin = distBins[label].sort((a,b) => b.totalVolume - a.totalVolume);
+                        const modalHtml = createLeaderboardTable(stocksInBin, ['代號', '名稱', `漲跌幅(%)`, `成交額(億)`],
+                            (s) => [
+                                s.symbol,
+                                s.name,
+                                `<span class="${s.perf > 0 ? 'text-red-600' : 'text-green-600'}">${s.perf.toFixed(2)}%</span>`,
+                                formatNumber(s.totalVolume / 100000000, 2)
+                            ],
+                            ['text-left', 'text-left', 'text-right', 'text-right']
+                        );
+                        showModal(`漲跌分佈: ${label} (共 ${stocksInBin.length} 檔)`, modalHtml);
+                    }
+                };
+                charts['distribution-chart'].options.plugins.datalabels = {
+                    anchor: 'end', align: 'end',
+                    formatter: (value, context) => {
+                        const total = periodData.length;
+                        const percentage = total > 0 ? (value / total * 100).toFixed(1) : 0;
+                        return value > 0 ? `${value}(${percentage}%)` : '';
+                    },
+                    color: '#374151', font: { size: 10 }
+                };
+                charts['distribution-chart'].update();
+            }
+        }
+
+        function renderSectorCharts(periodData) {
+            const sectorStats = {};
+            periodData.forEach(d => {
+                const industry = d.industry;
+                if (!industry) return;
+                if (!sectorStats[industry]) sectorStats[industry] = { up: 0, down: 0, flat: 0, total: 0, sumChange: 0, stocks: [] };
+                
+                if (d.perf > 0) sectorStats[industry].up++;
+                else if (d.perf < 0) sectorStats[industry].down++;
+                else sectorStats[industry].flat++;
+                
+                if(!isNaN(d.perf)) {
+                    sectorStats[industry].total++;
+                    sectorStats[industry].sumChange += d.perf;
+                }
+                sectorStats[industry].stocks.push(d);
+            });
+            const sortedSectorsByPerf = Object.entries(sectorStats).map(([name, stats]) => ({
+                name, ...stats, avgChange: stats.total > 0 ? stats.sumChange / stats.total : 0
+            })).sort((a, b) => b.avgChange - a.avgChange);
+            
+            updateChart('sector-up-down-chart', {
+                labels: sortedSectorsByPerf.map(s => s.name),
+                datasets: [
+                     { 
+                        type: 'bar',
+                        label: '下跌', 
+                        data: sortedSectorsByPerf.map(s => s.down), 
+                        backgroundColor: 'rgba(22, 163, 74, 0.7)',
+                        yAxisID: 'yCount'
+                    },
+                    { 
+                        type: 'bar',
+                        label: '平盤', 
+                        data: sortedSectorsByPerf.map(s => s.flat), 
+                        backgroundColor: 'rgba(107, 114, 128, 0.7)',
+                        yAxisID: 'yCount'
+                    },
+                    { 
+                        type: 'bar',
+                        label: '上漲', 
+                        data: sortedSectorsByPerf.map(s => s.up), 
+                        backgroundColor: 'rgba(220, 38, 38, 0.7)',
+                        yAxisID: 'yCount'
+                    },
+                    {
+                        type: 'line',
+                        label: '平均漲跌幅(%)',
+                        data: sortedSectorsByPerf.map(s => s.avgChange),
+                        borderColor: '#3b82f6',
+                        backgroundColor: '#3b82f6',
+                        yAxisID: 'yPerf',
+                        pointStyle: 'star',
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        showLine: false
+                    }
+                ]
+            });
+
+            if (charts['sector-up-down-chart']) {
+                charts['sector-up-down-chart'].options.onClick = (evt, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const sector = sortedSectorsByPerf[index];
+                        const gainers = sector.stocks.filter(s => s.perf > 0).sort((a,b) => b.perf - a.perf || b.totalVolume - a.totalVolume);
+                        const losers = sector.stocks.filter(s => s.perf < 0).sort((a,b) => a.perf - b.perf || b.totalVolume - a.totalVolume);
+
+                        let modalHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+                        modalHtml += `<div><h4 class="font-bold mb-2 text-red-600">上漲個股 (${gainers.length})</h4>${createLeaderboardTable(gainers, ['名稱', '漲跌幅', '成交額(億)'], s => [s.name, `${s.perf.toFixed(2)}%`, formatNumber(s.totalVolume / 1e8, 2)], ['text-left', 'text-right', 'text-right'])}</div>`;
+                        modalHtml += `<div><h4 class="font-bold mb-2 text-green-600">下跌個股 (${losers.length})</h4>${createLeaderboardTable(losers, ['名稱', '漲跌幅', '成交額(億)'], s => [s.name, `${s.perf.toFixed(2)}%`, formatNumber(s.totalVolume / 1e8, 2)], ['text-left', 'text-right', 'text-right'])}</div>`;
+                        modalHtml += `</div>`;
+                        
+                        showModal(`${sector.name} - 漲跌個股列表`, modalHtml);
+                    }
+                };
+            }
+        }
+
+        function renderInstBySectorChart(periodData) {
+            const sectorBuySell = {};
+            periodData.forEach(d => {
+                const industry = d.industry;
+                if (!industry) return;
+                if (!sectorBuySell[industry]) {
+                    sectorBuySell[industry] = { foreign: 0, it: 0, stocks: [] };
+                }
+                sectorBuySell[industry].foreign += d.foreignValue || 0;
+                sectorBuySell[industry].it += d.itValue || 0;
+                sectorBuySell[industry].stocks.push(d);
+            });
+
+            const sortedSectors = Object.entries(sectorBuySell)
+                .map(([name, values]) => ({ name, ...values }))
+                .sort((a,b) => (b.foreign + b.it) - (a.foreign + a.it));
+
+            updateChart('inst-by-sector-chart', {
+                labels: sortedSectors.map(s => s.name),
+                datasets: [
+                    { label: '外資買賣超(億)', data: sortedSectors.map(s => s.foreign / 100000000), backgroundColor: '#3b82f6' },
+                    { label: '投信買賣超(億)', data: sortedSectors.map(s => s.it / 100000000), backgroundColor: '#10b981' }
+                ]
+            });
+
+            if (charts['inst-by-sector-chart']) {
+                charts['inst-by-sector-chart'].options.onClick = (evt, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const datasetIndex = elements[0].datasetIndex;
+                        const investorType = datasetIndex === 0 ? 'foreignValue' : 'itValue';
+                        const investorName = datasetIndex === 0 ? '外資' : '投信';
+                        const sector = sortedSectors[index];
+                        
+                        const sortedStocks = sector.stocks.sort((a, b) => 
+                            b[investorType] - a[investorType] || b.perf - a.perf || b.totalVolume - a.totalVolume
+                        );
+
+                        const modalHtml = createLeaderboardTable(sortedStocks, ['名稱', `${investorName}買賣超(億)`, '漲跌幅', '成交額(億)'], 
+                            s => [
+                                s.name, 
+                                formatNumber(s[investorType] / 1e8, 2), 
+                                `<span class="${s.perf > 0 ? 'text-red-600' : 'text-green-600'}">${s.perf.toFixed(2)}%</span>`,
+                                formatNumber(s.totalVolume / 1e8, 2)
+                            ], 
+                            ['text-left', 'text-right', 'text-right', 'text-right']
+                        );
+                        
+                        showModal(`${sector.name} - ${investorName}買賣超排行`, modalHtml);
+                    }
+                };
+            }
+        }
+
+        function renderRankingTable(periodData) {
+            const container = document.getElementById('ranking-table');
+            const state = dashboardState.ranking;
+            
+            const headers = [
+                { key: 'symbol', label: '代號', align: 'text-left' },
+                { key: 'name', label: '名稱', align: 'text-left' },
+                { key: 'close', label: '收盤價', align: 'text-right' },
+                { key: 'perf', label: '漲跌幅(%)', align: 'text-right' },
+                { key: 'totalVolume', label: '成交額(億)', align: 'text-right' },
+                { key: 'foreignValue', label: '外資(億)', align: 'text-right' },
+                { key: 'itValue', label: '投信(億)', align: 'text-right' }
+            ];
+
+            const sortedData = [...periodData].sort((a, b) => {
+                const valA = a[state.sortColumn] || 0;
+                const valB = b[state.sortColumn] || 0;
+                let comparison = 0;
+                if (typeof valA === 'string') {
+                    comparison = valA.localeCompare(valB, 'zh-Hant');
+                } else {
+                    comparison = valA - valB;
+                }
+                return state.sortDirection === 'asc' ? comparison : -comparison;
+            }).slice(0, 20);
+
+            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
+            
+            const tableHTML = `
+                <table class="w-full text-sm">
+                    <thead><tr class="border-b border-gray-200">
+                        ${headers.map(h => {
+                            let sortIcon = '';
+                            if (h.key === state.sortColumn) {
+                                sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
+                            }
+                            return `<th class="pb-2 font-normal text-gray-500 ${h.align} sortable-header" data-key="${h.key}"><div class="flex items-center ${h.align === 'text-right' ? 'justify-end' : ''}">${h.label}${sortIcon}</div></th>`;
+                        }).join('')}
+                    </tr></thead>
+                    <tbody>
+                        ${sortedData.map(s => `
+                            <tr class="border-b border-gray-100 last:border-b-0">
+                                <td class="py-2 text-left">${s.symbol}</td>
+                                <td class="py-2 text-left">${s.name}</td>
+                                <td class="py-2 text-right"><span class="${numColor(s.change)}">${formatNumber(s.close, 2)}</span></td>
+                                <td class="py-2 text-right"><span class="${numColor(s.perf)}">${s.perf.toFixed(2)}%</span></td>
+                                <td class="py-2 text-right">${formatNumber(s.totalVolume / 100000000, 2)}</td>
+                                <td class="py-2 text-right"><span class="${numColor(s.foreignValue)}">${formatNumber(s.foreignValue / 100000000, 2)}</span></td>
+                                <td class="py-2 text-right"><span class="${numColor(s.itValue)}">${formatNumber(s.itValue / 100000000, 2)}</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            container.innerHTML = tableHTML;
+            lucide.createIcons();
+
+            container.querySelectorAll('.sortable-header').forEach(th => {
+                th.addEventListener('click', (e) => {
+                    const key = e.currentTarget.dataset.key;
+                    if (state.sortColumn === key) {
+                        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        state.sortColumn = key;
+                        state.sortDirection = ['symbol', 'name'].includes(key) ? 'asc' : 'desc';
+                    }
+                    renderRankingTable(periodData);
+                });
+            });
+        }
+        
+        function refreshMarketRevenueChart() {
+            const industry = dashboardState.selectedIndustry;
+            let revenueData = stockData.revenue;
+            let chartTitle = '整體市場';
+
+            if (industry) {
+                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號']));
+                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']));
+                chartTitle = industry;
+            }
 
             const revenueByMonth = revenueData.reduce((acc, row) => {
-                const month = row['資料年月']; // Already in YYYY-MM
+                const month = row['資料年月'];
                 const revenue = parseFloatSafe(row['當月營收']);
-                if (!isNaN(revenue)) {
-                    acc[month] = (acc[month] || 0) + revenue;
-                }
+                if (!isNaN(revenue)) acc[month] = (acc[month] || 0) + revenue;
                 return acc;
             }, {});
 
-            const sortedMonths = Object.keys(revenueByMonth).sort();
-            const chartData = sortedMonths.map(m => ({ x: toDate(m).getTime(), y: revenueByMonth[m] / 100000000 })); // 單位改為億
+            const sortedMonths = Object.keys(revenueByMonth).sort((a,b) => toDate(a) - toDate(b));
+            if (sortedMonths.length === 0) {
+                updateChart('market-revenue-chart', null, `無 ${chartTitle} 的營收資料`);
+                return;
+            }
             
+            const chartData = sortedMonths.map(m => ({ x: toDate(m).getTime(), y: revenueByMonth[m] / 1000 }));
+
             updateChart('market-revenue-chart', {
                 datasets: [{
-                    label: `${industry || '整體市場'}總營收(億元)`,
+                    label: `${chartTitle}總營收(百萬元)`,
                     data: chartData,
                     backgroundColor: '#4f46e5'
                 }]
@@ -1034,33 +1446,32 @@
         }
         
         function renderMarketInstChart() {
-            const industry = document.getElementById('inst-trend-industry-filter').value;
-            const investorType = document.getElementById('inst-trend-type-filter').value;
+            const industry = dashboardState.selectedIndustry;
+            let relevantData = stockData.daily;
             
-            const symbolsInIndustry = industry ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])) : null;
+            if (industry) {
+                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']));
+                relevantData = stockData.daily.filter(i => symbolsInIndustry.has(i['證券代號']));
+            }
             
-            const dailyPriceMap = new Map();
-            stockData.daily.forEach(d => {
-                const close = parseFloatSafe(d['收盤價']);
-                if (!isNaN(close)) {
-                    dailyPriceMap.set(`${d['日期']}-${d['證券代號']}`, close);
-                }
-            });
+            const endIdx = stockData.tradingDates.findIndex(dStr => toDate(dStr).getTime() === dashboardState.selectedDate.getTime());
+            const validEndIdx = endIdx === -1 ? 0 : endIdx;
+            const startIdx = Math.min(stockData.tradingDates.length - 1, validEndIdx + 9);
+            const dateRange = stockData.tradingDates.slice(validEndIdx, startIdx + 1);
+
+            const dateSet = new Set(dateRange);
+            relevantData = relevantData.filter(i => dateSet.has(i['日期']));
 
             const dailyInstValue = {};
-            stockData.institutional.forEach(i => {
-                if (symbolsInIndustry && !symbolsInIndustry.has(i['證券代號'])) return;
-                
-                const date = i['日期'];
-                const price = dailyPriceMap.get(`${date}-${i['證券代號']}`);
+            relevantData.forEach(d => {
+                const date = d['日期'];
+                const price = parseFloatSafe(d['收盤價']);
 
                 if (price) {
                     if (!dailyInstValue[date]) dailyInstValue[date] = { foreign: 0, it: 0, dealer: 0 };
-                    
-                    const f = (parseFloatSafe(i['外資買賣超股數']) || 0) * price / 100000000;
-                    const it = (parseFloatSafe(i['投信買賣超股數']) || 0) * price / 100000000;
-                    const dl = (parseFloatSafe(i['自營商買賣超股數']) || 0) * price / 100000000;
-
+                    const f = (parseFloatSafe(d['外資買賣超股數']) || 0) * price / 100000000;
+                    const it = (parseFloatSafe(d['投信買賣超股數']) || 0) * price / 100000000;
+                    const dl = (parseFloatSafe(d['自營商買賣超股數']) || 0) * price / 100000000;
                     if(!isNaN(f)) dailyInstValue[date].foreign += f;
                     if(!isNaN(it)) dailyInstValue[date].it += it;
                     if(!isNaN(dl)) dailyInstValue[date].dealer += dl;
@@ -1069,56 +1480,168 @@
 
             const sortedDates = Object.keys(dailyInstValue).sort((a,b)=>toDate(a)-toDate(b));
             
-            const datasets = [];
-            if (investorType === 'all' || investorType === 'foreign') {
-                datasets.push({ label: '外資(億)', data: sortedDates.map(d => ({ x: toDate(d).getTime(), y: dailyInstValue[d].foreign.toFixed(2) })), backgroundColor: '#3b82f6' });
+            if (sortedDates.length === 0) {
+                updateChart('market-inst-chart', null, `無三大法人資料`);
+                return;
             }
-            if (investorType === 'all' || investorType === 'it') {
-                datasets.push({ label: '投信(億)', data: sortedDates.map(d => ({ x: toDate(d).getTime(), y: dailyInstValue[d].it.toFixed(2) })), backgroundColor: '#10b981' });
+            
+            const labels = sortedDates.map(d => formatDateForDisplay(d));
+            const dataMapper = (type) => sortedDates.map(d => dailyInstValue[d][type].toFixed(2));
+
+            const datasets = [
+                { label: '外資(億)', data: dataMapper('foreign'), backgroundColor: '#3b82f6' },
+                { label: '投信(億)', data: dataMapper('it'), backgroundColor: '#10b981' },
+                { label: '自營商(億)', data: dataMapper('dealer'), backgroundColor: '#f97316' }
+            ];
+
+            updateChart('market-inst-chart', { labels, datasets });
+        }
+
+        async function renderMarketBreadthChart() {
+            const selectedDates = datePickers.breadthTrend?.selectedDates;
+            let dateRange;
+            if (selectedDates && selectedDates.length === 2) {
+                const startDate = new Date(selectedDates[0].setHours(0, 0, 0, 0));
+                const endDate = new Date(selectedDates[1].setHours(0, 0, 0, 0));
+                dateRange = stockData.tradingDates.filter(dStr => {
+                    const d = toDate(dStr);
+                    return d >= startDate && d <= endDate;
+                }).map(dStr => toDate(dStr));
+            } else {
+                const endIdx = stockData.tradingDates.findIndex(dStr => toDate(dStr).getTime() === dashboardState.selectedDate.getTime());
+                const validEndIdx = endIdx === -1 ? 0 : endIdx;
+                const startIdx = Math.min(stockData.tradingDates.length - 1, validEndIdx + 9);
+                dateRange = stockData.tradingDates.slice(validEndIdx, startIdx + 1).map(dStr => toDate(dStr));
             }
-            if (investorType === 'all' || investorType === 'dealer') {
-                datasets.push({ label: '自營商(億)', data: sortedDates.map(d => ({ x: toDate(d).getTime(), y: dailyInstValue[d].dealer.toFixed(2) })), backgroundColor: '#f97316' });
+            dateRange.sort((a,b) => a - b);
+
+            updateChart('market-breadth-chart', null, '計算中...');
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const trendData = { ma20: [], ma50: [], ma200: [], high52w: [] };
+            
+            const industry = dashboardState.selectedIndustry;
+            const symbolsToProcess = industry 
+                ? stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])
+                : Array.from(stockData.dailyBySymbol.keys());
+            
+            const labels = [];
+
+            for (const date of dateRange) {
+                const maStats = calculateMAStats(symbolsToProcess, date);
+                const highLowStats = calculate52WeekHighLow(date, symbolsToProcess);
+                labels.push(toDisplayDate(date));
+                trendData.ma20.push(maStats.above20);
+                trendData.ma50.push(maStats.above50);
+                trendData.ma200.push(maStats.above200);
+                trendData.high52w.push(highLowStats.high);
             }
 
-            updateChart('market-inst-chart', { datasets });
+            updateChart('market-breadth-chart', {
+                labels,
+                datasets: [
+                    { type: 'line', label: '>20MA 家數', data: trendData.ma20, borderColor: '#f97316', tension: 0.1, pointRadius: 2, borderWidth: 2, order: 1 },
+                    { type: 'line', label: '>50MA 家數', data: trendData.ma50, borderColor: '#3b82f6', tension: 0.1, pointRadius: 2, borderWidth: 2, order: 1 },
+                    { type: 'line', label: '>200MA 家數', data: trendData.ma200, borderColor: '#8b5cf6', tension: 0.1, pointRadius: 2, borderWidth: 2, order: 1 },
+                    { type: 'bar', label: '52週新高家數', data: trendData.high52w, backgroundColor: 'rgba(239, 68, 68, 0.6)', order: 2 },
+                ]
+            });
+        }
+
+        function renderMarketRevenueSeasonalityChart() {
+            const industry = dashboardState.selectedIndustry;
+            let revenueData = stockData.revenue;
+            if (industry) {
+                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號']));
+                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']));
+            }
+
+            if (revenueData.length === 0) {
+                 updateChart('market-revenue-seasonality-chart', null, `無${industry || '市場'}營收資料`);
+                 return;
+            }
+
+            const revenueByYearMonth = {};
+            revenueData.forEach(r => {
+                const date = toDate(r['資料年月']);
+                const year = date.getFullYear();
+                const month = date.getMonth(); // 0-11
+                if (!revenueByYearMonth[year]) revenueByYearMonth[year] = Array(12).fill(0);
+                revenueByYearMonth[year][month] += parseFloatSafe(r['當月營收']);
+            });
+
+            const datasets = [];
+            const years = Object.keys(revenueByYearMonth).sort((a,b) => b-a).slice(0, 5);
+            const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6'];
+
+            years.forEach((year, index) => {
+                const yearData = revenueByYearMonth[year].map(val => val > 0 ? val / 1000 : null); // to Million
+                datasets.push({
+                    label: `${year}年`,
+                    data: yearData,
+                    borderColor: colors[index % colors.length],
+                    backgroundColor: colors[index % colors.length],
+                    tension: 0.1,
+                    borderWidth: 2
+                });
+            });
+
+            updateChart('market-revenue-seasonality-chart', {
+                labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+                datasets
+            });
+            const chart = charts['market-revenue-seasonality-chart'];
+            if(chart) {
+                // De-collision logic for datalabels
+                const lastPoints = datasets.map(ds => {
+                    const lastValue = ds.data.slice().reverse().find(d => d !== null);
+                    return { label: ds.label, value: lastValue };
+                }).filter(p => p.value !== undefined).sort((a, b) => b.value - a.value);
+
+                const minSeparation = 12; // Minimum pixel separation
+
+                chart.options.plugins.datalabels.formatter = (value, context) => {
+                    const dataset = context.dataset.data;
+                    const nonNullData = dataset.filter(v => v !== null);
+                    if (nonNullData.length > 0 && value === nonNullData[nonNullData.length - 1]) {
+                        return context.dataset.label;
+                    }
+                    return '';
+                };
+                
+                chart.options.plugins.datalabels.align = (context) => {
+                    const dataset = context.dataset.data;
+                    const nonNullData = dataset.filter(v => v !== null);
+                     if (nonNullData.length > 0 && context.dataset.data[context.dataIndex] === nonNullData[nonNullData.length - 1]) {
+                        return 'right';
+                    }
+                    return 'center';
+                };
+                
+                chart.options.plugins.datalabels.offset = 8;
+                chart.update();
+            }
         }
 
         function createLeaderboardTable(data, headers, rowMapper, alignments = []) {
             if (!data || data.length === 0) return `<div class="text-center py-4 text-gray-500 text-xs">無資料</div>`;
-            return `
-                <table class="w-full text-sm">
-                    <thead><tr class="border-b border-gray-200">
-                        ${headers.map((h, i) => `<th class="pb-1 font-normal text-gray-500 ${alignments[i] || 'text-left'}">${h}</th>`).join('')}
+            return `<div class="overflow-y-auto max-h-[60vh]"><table class="w-full text-sm">
+                    <thead><tr class="border-b border-gray-200 sticky top-0 bg-white">
+                        ${headers.map((h, i) => `<th class="py-2 px-1 font-normal text-gray-500 ${alignments[i] || 'text-left'}">${h}</th>`).join('')}
                     </tr></thead>
                     <tbody>
                         ${data.map(item => `
                             <tr class="border-b border-gray-100 last:border-b-0">
-                                ${rowMapper(item).map((cell, i) => `<td class="py-1.5 ${alignments[i] || 'text-left'}">${cell}</td>`).join('')}
+                                ${rowMapper(item).map((cell, i) => `<td class="py-1.5 px-1 ${alignments[i] || 'text-left'}">${cell}</td>`).join('')}
                             </tr>
                         `).join('')}
                     </tbody>
-                </table>
-            `;
+                </table></div>`;
         }
 
-        function setupTabControls(containerId, tabs, callback) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-            container.innerHTML = tabs.map((tab, i) => `<button class="dashboard-tab ${i === 0 ? 'active' : ''}" data-key="${tab.key}">${tab.label}</button>`).join('');
-            container.querySelectorAll('.dashboard-tab').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('active')) return;
-                    container.querySelector('.active').classList.remove('active');
-                    e.target.classList.add('active');
-                    callback(e.target.dataset.key);
-                });
-            });
-            if (tabs.length > 0) callback(tabs[0].key);
-        }
-
-        // --- Interactive Table with Pagination and Better Filters ---
         function renderInteractiveTable(containerId, data, headers, categoricalHeaders = [], columnWidths = {}, numericHeaders = []) {
             const container = document.getElementById(containerId);
+            const controlsContainer = document.getElementById(`table-controls-${containerId.split('-')[2]}`);
             if (!container) return;
 
             if (!tableStates[containerId]) {
@@ -1134,38 +1657,19 @@
 
             const processData = () => {
                 let processedData = [...data];
-
                 Object.entries(state.filters).forEach(([key, value]) => {
-                    if (value) {
-                        processedData = processedData.filter(row => 
-                            String(row[key] ?? '').toLowerCase().includes(value.toLowerCase())
-                        );
-                    }
+                    if (value) processedData = processedData.filter(row => String(row[key] ?? '').toLowerCase().includes(value.toLowerCase()));
                 });
 
                 if (state.sortColumn) {
                     processedData.sort((a, b) => {
-                        const valA = a[state.sortColumn];
-                        const valB = b[state.sortColumn];
-                        
-                        if (state.sortColumn === '日期' || state.sortColumn === '資料年月' || state.sortColumn === '上市日') {
-                            const dateA = toDate(valA);
-                            const dateB = toDate(valB);
-                            if (dateA && dateB) {
-                                const comparison = dateA - dateB;
-                                return state.sortDirection === 'asc' ? comparison : -comparison;
-                            }
+                        const valA = a[state.sortColumn], valB = b[state.sortColumn];
+                        if (['日期', '資料年月', '上市日'].includes(state.sortColumn)) {
+                            const dateA = toDate(valA), dateB = toDate(valB);
+                            if (dateA && dateB) return state.sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
                         }
-                        
-                        const numA = parseFloatSafe(valA);
-                        const numB = parseFloatSafe(valB);
-
-                        let comparison = 0;
-                        if (!isNaN(numA) && !isNaN(numB)) {
-                            comparison = numA - numB;
-                        } else {
-                            comparison = String(valA).localeCompare(String(valB), 'zh-Hant');
-                        }
+                        const numA = parseFloatSafe(valA), numB = parseFloatSafe(valB);
+                        let comparison = !isNaN(numA) && !isNaN(numB) ? numA - numB : String(valA).localeCompare(String(valB), 'zh-Hant');
                         return state.sortDirection === 'asc' ? comparison : -comparison;
                     });
                 }
@@ -1173,28 +1677,26 @@
             };
 
             const render = () => {
+                const processedData = processData();
+                state.currentData = processedData;
+
                 if (!data || data.length === 0) {
                     container.innerHTML = `<div class="text-center py-8 text-gray-500">無資料可顯示。</div>`;
+                    if (controlsContainer) controlsContainer.innerHTML = '';
                     return;
                 }
 
-                const processedData = processData();
                 const totalItems = processedData.length;
                 const totalPages = Math.ceil(totalItems / state.itemsPerPage);
                 if (state.currentPage > totalPages && totalPages > 0) state.currentPage = totalPages;
                 
                 const startIndex = (state.currentPage - 1) * state.itemsPerPage;
-                const endIndex = startIndex + state.itemsPerPage;
-                const paginatedData = processedData.slice(startIndex, endIndex);
+                const paginatedData = processedData.slice(startIndex, startIndex + state.itemsPerPage);
 
                 let headerHTML = '<tr>';
                 headers.forEach(h => {
-                    let sortIcon = '';
-                    if (h === state.sortColumn) {
-                        sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
-                    }
-                    const widthClass = columnWidths[h] ? ` style="width: ${columnWidths[h]}"` : '';
-                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sortable-header"${widthClass} data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
+                    let sortIcon = h === state.sortColumn ? (state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>') : '';
+                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sortable-header" style="${columnWidths[h] ? `width: ${columnWidths[h]}` : ''}" data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
                 });
                 headerHTML += '</tr>';
                 
@@ -1217,84 +1719,59 @@
                 let bodyHTML = paginatedData.map(row => 
                     `<tr>${headers.map(h => {
                         let cellValue = row[h] ?? '';
-                        
-                        if (h === '日期' || h === '上市日' || h === '資料年月') {
-                            return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${formatDateForDisplay(cellValue)}</td>`;
-                        }
-                        
-                        if (h === '漲跌價差') {
-                            const changeVal = parseFloatSafe(cellValue);
-                            const colorClass = changeVal > 0 ? 'text-red-600' : (changeVal < 0 ? 'text-green-600' : 'text-gray-700');
-                            return `<td class="px-4 py-4 whitespace-nowrap text-sm ${colorClass}">${cellValue}</td>`;
-                        }
-
-                        if (numericHeaders.includes(h)) {
-                            const displayVal = formatNumber(cellValue, 0);
-                            return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right">${displayVal}</td>`;
-                        }
-                        
+                        if (['日期', '上市日', '資料年月'].includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${formatDateForDisplay(cellValue)}</td>`;
+                        if (h === '漲跌價差') return `<td class="px-4 py-4 whitespace-nowrap text-sm ${parseFloatSafe(cellValue) > 0 ? 'text-red-600' : (parseFloatSafe(cellValue) < 0 ? 'text-green-600' : 'text-gray-700')}">${cellValue}</td>`;
+                        if (numericHeaders.includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right">${formatNumber(cellValue, h.includes('股數') ? 0 : 2)}</td>`;
                         return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellValue}</td>`;
                     }).join('')}</tr>`
                 ).join('');
 
                 const startEntry = totalItems > 0 ? startIndex + 1 : 0;
-                const endEntry = Math.min(endIndex, totalItems);
+                const endEntry = Math.min(startIndex + state.itemsPerPage, totalItems);
 
                 container.innerHTML = `
-                    <div class="flex justify-between items-center mb-2">
-                        <p class="text-sm text-gray-500">顯示 ${formatNumber(startEntry, 0)} 至 ${formatNumber(endEntry, 0)} 項，共 ${formatNumber(totalItems, 0)} 項資料</p>
-                    </div>
-                    <div class="overflow-auto" style="max-height: calc(75vh - 80px);">
-                        <table class="min-w-full divide-y divide-gray-200 table-fixed">
-                            <thead class="sticky-header">${headerHTML}${filterHTML}</thead>
-                            <tbody class="bg-white divide-y divide-gray-200">${bodyHTML}</tbody>
-                        </table>
-                    </div>
+                    <div class="flex justify-between items-center mb-2"><p class="text-sm text-gray-500">顯示 ${formatNumber(startEntry, 0)} 至 ${formatNumber(endEntry, 0)} 項，共 ${formatNumber(totalItems, 0)} 項資料</p></div>
+                    <div class="overflow-auto" style="max-height: calc(75vh - 80px);"><table class="min-w-full divide-y divide-gray-200 table-fixed"><thead class="sticky-header">${headerHTML}${filterHTML}</thead><tbody class="bg-white divide-y divide-gray-200">${bodyHTML}</tbody></table></div>
                     <div id="pagination-controls-${containerId}" class="flex justify-end items-center mt-4 space-x-2"></div>
                     ${datalistsHTML}
                 `;
 
+                if (controlsContainer) {
+                    controlsContainer.innerHTML = `
+                        <button class="copy-table-btn control-btn !bg-blue-100 !text-blue-800 hover:!bg-blue-200 text-sm" data-tableid="${containerId}"><i data-lucide="copy" class="w-4 h-4 mr-1.5"></i>複製</button>
+                        <button class="download-table-btn control-btn !bg-green-100 !text-green-800 hover:!bg-green-200 text-sm" data-tableid="${containerId}"><i data-lucide="download" class="w-4 h-4 mr-1.5"></i>下載 Excel</button>
+                    `;
+                    controlsContainer.querySelector('.copy-table-btn').addEventListener('click', () => copyTableToClipboard(containerId, headers));
+                    controlsContainer.querySelector('.download-table-btn').addEventListener('click', () => downloadTableAsCSV(containerId, headers));
+                }
+
                 renderPagination(containerId, totalItems);
                 lucide.createIcons();
                 
-                const debouncedRender = debounce(() => {
-                    state.currentPage = 1;
-                    render();
-                }, 300);
+                const debouncedRender = debounce(() => { state.currentPage = 1; render(); }, 300);
 
                 container.querySelectorAll('.sortable-header').forEach(th => {
                     th.addEventListener('click', () => {
                         const key = th.dataset.key;
-                        if (state.sortColumn === key) {
-                            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
-                        } else {
-                            state.sortColumn = key;
-                            state.sortDirection = 'asc';
-                        }
+                        if (state.sortColumn === key) state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+                        else { state.sortColumn = key; state.sortDirection = 'asc'; }
                         render();
                     });
                 });
 
-                container.querySelectorAll('.filter-input').forEach(input => {
-                    input.addEventListener('input', (e) => {
-                        state.filters[e.target.dataset.key] = e.target.value;
-                        debouncedRender();
-                    });
-                });
+                container.querySelectorAll('.filter-input').forEach(input => input.addEventListener('input', (e) => { state.filters[e.target.dataset.key] = e.target.value; debouncedRender(); }));
             };
             
             const renderPagination = (containerId, totalItems) => {
-                 const paginationContainer = document.getElementById(`pagination-controls-${containerId}`);
+                const paginationContainer = document.getElementById(`pagination-controls-${containerId}`);
                 if (!paginationContainer) return;
                 const totalPages = Math.ceil(totalItems / state.itemsPerPage);
                 if (totalPages <= 1) { paginationContainer.innerHTML = ''; return; }
 
                 let paginationHTML = `<button data-page="${state.currentPage - 1}" ${state.currentPage === 1 ? 'disabled' : ''}>« 上一頁</button>`;
                 const maxPagesToShow = 7, half = Math.floor(maxPagesToShow / 2);
-                let start = state.currentPage - half, end = state.currentPage + half;
-                if (start < 1) { end += (1-start); start = 1; }
-                if (end > totalPages) { start -= (end-totalPages); end = totalPages; }
-                start = Math.max(1, start);
+                let start = Math.max(1, state.currentPage - half), end = Math.min(totalPages, start + maxPagesToShow - 1);
+                if (end - start < maxPagesToShow - 1) start = Math.max(1, end - maxPagesToShow + 1);
 
                 if (start > 1) paginationHTML += `<button data-page="1">1</button><span class="px-2">...</span>`;
                 for (let i = start; i <= end; i++) paginationHTML += `<button data-page="${i}" class="${i === state.currentPage ? 'active' : ''}">${i}</button>`;
@@ -1302,337 +1779,667 @@
                 paginationHTML += `<button data-page="${state.currentPage + 1}" ${state.currentPage === totalPages ? 'disabled' : ''}>下一頁 »</button>`;
                 
                 paginationContainer.innerHTML = paginationHTML;
-                paginationContainer.querySelectorAll('button').forEach(button => {
-                    button.addEventListener('click', e => {
-                        const newPage = parseInt(e.currentTarget.dataset.page, 10);
-                        if (newPage && newPage !== state.currentPage) { state.currentPage = newPage; render(); }
-                    });
-                });
+                paginationContainer.querySelectorAll('button').forEach(button => button.addEventListener('click', e => {
+                    const newPage = parseInt(e.currentTarget.dataset.page, 10);
+                    if (newPage && newPage !== state.currentPage) { state.currentPage = newPage; render(); }
+                }));
             };
-
             render();
         }
 
-        function renderStockListPage() {
-            renderInteractiveTable('table-container-stock-list', stockData.basic, 
-                ['證券代號', '證券名稱', '產業別', '上市日'], 
-                ['產業別']);
-        }
-        function renderDailyClosePage() {
-            const numericCols = ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交金額'];
-            renderInteractiveTable('table-container-daily', stockData.daily, 
-                ['日期', '證券代號', '證券名稱', '開盤價', '最高價', '最低價', '收盤價', '漲跌價差', '成交股數', '成交金額'],
-                [], {}, numericCols);
-        }
-        function renderInstitutionalInvestorsPage() {
-            const numericCols = ['外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數'];
-            renderInteractiveTable('table-container-institutional', stockData.institutional,
-                ['日期', '證券代號', '證券名稱', ...numericCols],
-                [], {}, numericCols);
-        }
-        function renderRevenuePage() {
-            const headers = ['資料年月', '公司代號', '公司名稱', '當月營收', '備註'];
-            const numericCols = ['當月營收'];
-            renderInteractiveTable('table-container-revenue', stockData.revenue, headers, [], {}, numericCols);
+        function copyTableToClipboard(tableId, headers) {
+            const data = tableStates[tableId]?.currentData;
+            if (!data || data.length === 0) { showModal('提示', '<p>沒有可複製的資料。</p>'); return; }
+            const headerText = headers.join('\t');
+            const rowText = data.map(row => headers.map(h => row[h] ?? '').join('\t')).join('\n');
+            const fullText = `${headerText}\n${rowText}`;
+            navigator.clipboard.writeText(fullText).then(() => { showModal('成功', `<p>已將 ${data.length} 筆資料複製到剪貼簿。</p>`);
+            }).catch(err => { console.error('複製失敗:', err); showModal('錯誤', '<p>複製資料時發生錯誤。</p>'); });
         }
 
+        function downloadTableAsCSV(tableId, headers) {
+            const data = tableStates[tableId]?.currentData;
+            if (!data || data.length === 0) { showModal('提示', '<p>沒有可下載的資料。</p>'); return; }
+            const replacer = (key, value) => value === null ? '' : value;
+            const csv = [ headers.join(','), ...data.map(row => headers.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(',')) ].join('\r\n');
+            const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `${tableId}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        }
+
+        function renderStockListPage() { renderInteractiveTable('table-container-stock-list', stockData.basic, ['證券代號', '證券名稱', '產業別', '上市日'], ['產業別']); }
+        function renderDailyClosePage() { renderInteractiveTable('table-container-daily', stockData.daily, ['日期', '證券代號', '證券名稱', '開盤價', '最高價', '最低價', '收盤價', '漲跌價差', '成交股數', '成交金額', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數'], [], {}, ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交金額', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數']); }
+        function renderRevenuePage() { renderInteractiveTable('table-container-revenue', stockData.revenue, ['資料年月', '公司代號', '公司名稱', '當月營收', '備註'], [], {}, ['當月營收']); }
+
         // --- 個股分析與比較 ---
-        function analyzeStock() {
-            const symbol = document.getElementById('stock-symbol').value.trim();
+        async function analyzeStock(symbol) {
             if (!symbol) { 
                 showModal('提示', '<p>請輸入股票代號</p>'); 
                 return; 
             }
             
-            const stockInfo = stockData.basic.find(s => s['證券代號'] === symbol);
-            document.getElementById('stock-name-display').textContent = stockInfo ? `${symbol} ${stockInfo['證券名稱']} (${stockInfo['產業別']})` : `${symbol} 查無此股票基本資料`;
-            
-            document.getElementById('analysis-results').classList.remove('hidden');
-
-            const infoContainer = document.getElementById('stock-basic-info-container');
-            if (stockInfo) {
-                infoContainer.innerHTML = `
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">基本資料</h3>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left text-gray-500">
-                             <tbody>
-                                <tr class="bg-white border-b">
-                                    <th scope="row" class="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">證券代號</th><td class="px-6 py-3">${stockInfo['證券代號'] || ''}</td>
-                                    <th scope="row" class="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">證券名稱</th><td class="px-6 py-3">${stockInfo['證券名稱'] || ''}</td>
-                                </tr>
-                                <tr class="bg-white border-b">
-                                    <th scope="row" class="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">產業別</th><td class="px-6 py-3">${stockInfo['產業別'] || ''}</td>
-                                    <th scope="row" class="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">上市日</th><td class="px-6 py-3">${formatDateForDisplay(stockInfo['上市日'])}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            } else {
-                infoContainer.innerHTML = `<h3 class="text-lg font-semibold text-gray-800 mb-4">基本資料</h3><div class="text-center py-4 text-gray-500">無此股票的基本資料</div>`;
+            const stockDaily = stockData.dailyBySymbol.get(symbol);
+            if (!stockDaily || stockDaily.length === 0) {
+                showModal('查無資料', `<p>在目前載入的資料範圍內，找不到 ${symbol} 的每日行情資料。</p><p class="mt-2 text-sm text-gray-500">您可以至「資料管理」頁面，選擇更早的起始年份來重新載入更完整的歷史資料。</p>`);
+                return;
             }
 
-            const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol)
-                .map(d => ({ 
-                    time: toDate(d['日期'])?.getTime(), 
-                    open: parseFloatSafe(d['開盤價']), 
-                    high: parseFloatSafe(d['最高價']), 
-                    low: parseFloatSafe(d['最低價']), 
-                    close: parseFloatSafe(d['收盤價']),
-                    volume: parseFloatSafe(d['成交股數']) / 1000
-                }))
-                .filter(d => d.time && !isNaN(d.close))
-                .sort((a,b) => a.time - b.time);
+            const stockInfo = stockData.basic.find(s => s['證券代號'] === symbol);
+            document.getElementById('stock-name-display').textContent = stockInfo ? `${symbol} ${stockInfo['證券名稱']} (${stockInfo['產業別']})` : `${symbol} (查無此股票基本資料)`;
+            document.getElementById('analysis-results').classList.remove('hidden');
+            
+            showLoading('正在計算個股與產業指標...');
+            await new Promise(resolve => setTimeout(resolve, 50)); // Allow UI to update
 
-            if (stockDaily.length > 0) {
-                const closingPrices = stockDaily.map(d => d.close);
-                
-                const calculateMA = (period) => {
-                    if(!period || period <= 0) return [];
-                    const ma = [];
-                    for (let i = 0; i < stockDaily.length; i++) {
-                        if (i < period - 1) {
-                            ma.push({ time: stockDaily[i].time, value: null });
-                        } else {
-                            const sum = closingPrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-                            ma.push({ time: stockDaily[i].time, value: sum / period });
-                        }
+            await renderAnalysisCards(symbol);
+            renderCandlestickChart(symbol);
+            renderIndividualInstChart(symbol);
+            renderIndividualRevenueChart(symbol);
+            renderRevenueSeasonalityChart(symbol);
+            renderPeerComparisonChart(symbol);
+            
+            hideLoading();
+        }
+        
+        async function renderAnalysisCards(symbol) {
+            const container = document.getElementById('analysis-cards');
+            const dailyHistory = stockData.dailyBySymbol.get(symbol);
+            const revenueHistory = stockData.revenueBySymbol.get(symbol) || [];
+            
+            if (!dailyHistory || dailyHistory.length === 0) {
+                container.innerHTML = `<div class="col-span-full text-center py-4 text-gray-500">無足夠資料可計算指標</div>`;
+                return;
+            }
+
+            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
+            const latestDate = dailyHistory[dailyHistory.length - 1].date;
+
+            // 個股指標
+            const ytdData = calculatePeriodData('YTD', latestDate, null).find(d => d.symbol === symbol) || {};
+            const mtdData = calculatePeriodData('MTD', latestDate, null).find(d => d.symbol === symbol) || {};
+            
+            let mom = NaN, yoy = NaN;
+            if (revenueHistory.length >= 13) {
+                const latestRevenue = revenueHistory[revenueHistory.length - 1].value;
+                const prevMonthRevenue = revenueHistory[revenueHistory.length - 2].value;
+                const prevYearRevenue = revenueHistory[revenueHistory.length - 13].value;
+                if (prevMonthRevenue) mom = ((latestRevenue / prevMonthRevenue) - 1) * 100;
+                if (prevYearRevenue) yoy = ((latestRevenue / prevYearRevenue) - 1) * 100;
+            }
+
+            // 產業平均指標
+            const industryAverages = await calculateIndustryAverages(symbol, latestDate);
+
+            const cardHTML = (title, value, unit = '', colorClass = 'text-gray-700', decimals = 2) => `
+                <div class="stat-card">
+                    <h3>${title}</h3>
+                    <p class="${colorClass}">${formatNumber(value, decimals)}${unit}</p>
+                </div>`;
+
+            container.innerHTML = `
+                <!-- 個股報酬 -->
+                ${cardHTML('總報酬 (MTD)', mtdData.perf, '%', numColor(mtdData.perf))}
+                ${cardHTML('總報酬 (YTD)', ytdData.perf, '%', numColor(ytdData.perf))}
+                ${cardHTML('營收 MoM', mom, '%', numColor(mom))}
+                ${cardHTML('營收 YoY', yoy, '%', numColor(yoy))}
+                ${cardHTML('外資買超 (MTD)', mtdData.foreignValue / 100000000, '億', numColor(mtdData.foreignValue), 0)}
+                ${cardHTML('投信買超 (MTD)', mtdData.itValue / 100000000, '億', numColor(mtdData.itValue), 0)}
+                ${cardHTML('外資買超 (YTD)', ytdData.foreignValue / 100000000, '億', numColor(ytdData.foreignValue), 0)}
+                ${cardHTML('投信買超 (YTD)', ytdData.itValue / 100000000, '億', numColor(ytdData.itValue), 0)}
+
+                <!-- 分隔線 -->
+                <div class="col-span-full border-t my-2"></div>
+                <h3 class="col-span-full text-md font-semibold text-gray-700 -mt-2 mb-2">同產業個股平均</h3>
+
+                <!-- 產業平均 -->
+                ${cardHTML('總報酬 (MTD)', industryAverages.avgMtdPerf, '%', numColor(industryAverages.avgMtdPerf))}
+                ${cardHTML('總報酬 (YTD)', industryAverages.avgYtdPerf, '%', numColor(industryAverages.avgYtdPerf))}
+                ${cardHTML('營收 MoM', industryAverages.avgMom, '%', numColor(industryAverages.avgMom))}
+                ${cardHTML('營收 YoY', industryAverages.avgYoy, '%', numColor(industryAverages.avgYoy))}
+                ${cardHTML('外資買超 (MTD)', industryAverages.avgMtdForeignValue / 100000000, '億', numColor(industryAverages.avgMtdForeignValue), 0)}
+                ${cardHTML('投信買超 (MTD)', industryAverages.avgMtdItValue / 100000000, '億', numColor(industryAverages.avgMtdItValue), 0)}
+                ${cardHTML('外資買超 (YTD)', industryAverages.avgYtdForeignValue / 100000000, '億', numColor(industryAverages.avgYtdForeignValue), 0)}
+                ${cardHTML('投信買超 (YTD)', industryAverages.avgYtdItValue / 100000000, '億', numColor(industryAverages.avgYtdItValue), 0)}
+            `;
+        }
+        
+        async function calculateIndustryAverages(symbol, endDate) {
+            const stockInfo = stockData.basic.find(s => s['證券代號'] === symbol);
+            const result = { avgMtdPerf: NaN, avgYtdPerf: NaN, avgMom: NaN, avgYoy: NaN, avgMtdForeignValue: NaN, avgMtdItValue: NaN, avgYtdForeignValue: NaN, avgYtdItValue: NaN };
+            if (!stockInfo || !stockInfo['產業別']) return result;
+
+            const industry = stockInfo['產業別'];
+            const peerSymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']);
+
+            const allMtdData = calculatePeriodData('MTD', endDate, industry);
+            const allYtdData = calculatePeriodData('YTD', endDate, industry);
+            
+            const validMtdPerf = allMtdData.map(d => d.perf).filter(p => !isNaN(p));
+            if (validMtdPerf.length > 0) result.avgMtdPerf = validMtdPerf.reduce((a, b) => a + b, 0) / validMtdPerf.length;
+
+            const validYtdPerf = allYtdData.map(d => d.perf).filter(p => !isNaN(p));
+            if (validYtdPerf.length > 0) result.avgYtdPerf = validYtdPerf.reduce((a, b) => a + b, 0) / validYtdPerf.length;
+
+            const validMtdForeign = allMtdData.map(d => d.foreignValue).filter(s => !isNaN(s));
+            if (validMtdForeign.length > 0) result.avgMtdForeignValue = validMtdForeign.reduce((a, b) => a + b, 0) / validMtdForeign.length;
+            
+            const validMtdIt = allMtdData.map(d => d.itValue).filter(s => !isNaN(s));
+            if (validMtdIt.length > 0) result.avgMtdItValue = validMtdIt.reduce((a, b) => a + b, 0) / validMtdIt.length;
+            
+            const validYtdForeign = allYtdData.map(d => d.foreignValue).filter(s => !isNaN(s));
+            if (validYtdForeign.length > 0) result.avgYtdForeignValue = validYtdForeign.reduce((a, b) => a + b, 0) / validYtdForeign.length;
+            
+            const validYtdIt = allYtdData.map(d => d.itValue).filter(s => !isNaN(s));
+            if (validYtdIt.length > 0) result.avgYtdItValue = validYtdIt.reduce((a, b) => a + b, 0) / validYtdIt.length;
+
+            let momValues = [], yoyValues = [];
+            for (const peerSymbol of peerSymbols) {
+                const revenueHistory = stockData.revenueBySymbol.get(peerSymbol);
+                if (revenueHistory && revenueHistory.length >= 13) {
+                    const latestRevenue = revenueHistory[revenueHistory.length - 1].value;
+                    const prevMonthRevenue = revenueHistory[revenueHistory.length - 2].value;
+                    const prevYearRevenue = revenueHistory[revenueHistory.length - 13].value;
+                    if (prevMonthRevenue) momValues.push(((latestRevenue / prevMonthRevenue) - 1) * 100);
+                    if (prevYearRevenue) yoyValues.push(((latestRevenue / prevYearRevenue) - 1) * 100);
+                }
+            }
+            
+            const validMom = momValues.filter(v => !isNaN(v));
+            if (validMom.length > 0) result.avgMom = validMom.reduce((a, b) => a + b, 0) / validMom.length;
+
+            const validYoy = yoyValues.filter(v => !isNaN(v));
+            if (validYoy.length > 0) result.avgYoy = validYoy.reduce((a, b) => a + b, 0) / validYoy.length;
+
+            return result;
+        }
+
+        function renderCandlestickChart(symbol) {
+            const stockDaily = stockData.dailyBySymbol.get(symbol);
+            if (!stockDaily || stockDaily.length === 0) {
+                updateChart('candlestick-chart', null, `無 ${symbol} 的每日行情資料`);
+                return;
+            }
+            
+            const data = stockDaily.map(d => ({
+                x: d.date.getTime(),
+                o: d.open, h: d.high, l: d.low, c: d.close,
+                s: [d.open, d.close]
+            }));
+
+            const volumeData = stockDaily.map(d => ({ x: d.date.getTime(), y: d.shares / 1000 }));
+            const volumeColors = stockDaily.map((d, i) => i === 0 ? '#a0aec0' : (d.close >= stockDaily[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)'));
+            const closingPrices = stockDaily.map(d => d.close);
+
+            const calculateMAData = (period) => {
+                if(!period || period <= 0) return [];
+                const ma = [];
+                for (let i = 0; i < stockDaily.length; i++) {
+                    const value = i < period - 1 ? null : closingPrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+                    ma.push({ x: stockDaily[i].date.getTime(), y: value });
+                }
+                return ma;
+            };
+            const calculateBollingerBands = (period = 20, stdDev = 2) => {
+                if(!period || period <= 0 || !stdDev || stdDev <= 0) return { upper: [], middle: [], lower: [] };
+                const smaData = calculateMAData(period).map(d => d.y);
+                const bands = { upper: [], middle: [], lower: [] };
+                for (let i = period - 1; i < stockDaily.length; i++) {
+                    const slice = closingPrices.slice(i - period + 1, i + 1);
+                    const mean = smaData[i];
+                    const time = stockDaily[i].date.getTime();
+                    if (mean === null) {
+                         bands.upper.push({x: time, y: null}); bands.middle.push({x: time, y: null}); bands.lower.push({x: time, y: null});
+                         continue;
                     }
-                    return ma;
-                };
+                    const variance = slice.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / period;
+                    const sd = Math.sqrt(variance);
+                    bands.upper.push({x: time, y: mean + (sd * stdDev)});
+                    bands.middle.push({x: time, y: mean});
+                    bands.lower.push({x: time, y: mean - (sd * stdDev)});
+                }
+                const padding = Array(period - 1).fill(null).map((_, i) => ({x: stockDaily[i].date.getTime(), y: null}));
+                return { upper: [...padding, ...bands.upper], middle: [...padding, ...bands.middle], lower: [...padding, ...bands.lower] };
+            };
 
-                const calculateBollingerBands = (period = 20, stdDev = 2) => {
-                    if(!period || period <= 0 || !stdDev || stdDev <= 0) return { upper: [], middle: [], lower: [] };
-                    const sma = calculateMA(period).map(d => d.value);
-                    const bands = { upper: [], middle: [], lower: [] };
-                    for (let i = period - 1; i < stockDaily.length; i++) {
-                        const slice = closingPrices.slice(i - period + 1, i + 1);
-                        const mean = sma[i];
-                        if (mean === null) continue;
-                        const variance = slice.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / period;
-                        const sd = Math.sqrt(variance);
-                        bands.upper.push({ time: stockDaily[i].time, value: mean + (sd * stdDev) });
-                        bands.middle.push({ time: stockDaily[i].time, value: mean });
-                        bands.lower.push({ time: stockDaily[i].time, value: mean - (sd * stdDev) });
-                    }
-                    const padding = Array(stockDaily.length - bands.upper.length).fill(null).map((_, i) => ({time: stockDaily[i].time, value: null}));
-                    return {
-                        upper: [...padding, ...bands.upper],
-                        middle: [...padding, ...bands.middle],
-                        lower: [...padding, ...bands.lower]
-                    };
-                };
+            const ma1_period = parseInt(document.getElementById('ma1-period').value, 10);
+            const ma2_period = parseInt(document.getElementById('ma2-period').value, 10);
+            const ma3_period = parseInt(document.getElementById('ma3-period').value, 10);
+            const bb_period = parseInt(document.getElementById('bb-period').value, 10);
+            const bb_stddev = parseFloat(document.getElementById('bb-stddev').value);
+            
+            let datasets = [
+                { type: 'candlestick', label: symbol, data: data, yAxisID: 'yPrice' },
+                { type: 'bar', label: '成交量(張)', data: volumeData, yAxisID: 'yVolume', backgroundColor: volumeColors }
+            ];
+            
+            if (document.getElementById('show-ma').checked) {
+                datasets.push({ type: 'line', label: `MA${ma1_period}`, data: calculateMAData(ma1_period), borderColor: '#f97316', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+                datasets.push({ type: 'line', label: `MA${ma2_period}`, data: calculateMAData(ma2_period), borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+                datasets.push({ type: 'line', label: `MA${ma3_period}`, data: calculateMAData(ma3_period), borderColor: '#8b5cf6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
+            }
+            if (document.getElementById('show-bb').checked) {
+                const bb = calculateBollingerBands(bb_period, bb_stddev);
+                datasets.push({ type: 'line', label: 'BB 上軌', data: bb.upper, borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
+                datasets.push({ type: 'line', label: 'BB 中軌', data: bb.middle, borderColor: 'rgba(139, 92, 246, 0.5)', borderDash: [5, 5], borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
+                datasets.push({ type: 'line', label: 'BB 下軌', data: bb.lower, borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: 'rgba(139, 92, 246, 0.1)', yAxisID: 'yPrice' });
+            }
 
-                const ma1_period = parseInt(document.getElementById('ma1-period').value, 10);
-                const ma2_period = parseInt(document.getElementById('ma2-period').value, 10);
-                const ma3_period = parseInt(document.getElementById('ma3-period').value, 10);
-                const bb_period = parseInt(document.getElementById('bb-period').value, 10);
-                const bb_stddev = parseFloat(document.getElementById('bb-stddev').value);
+            updateChart('candlestick-chart', { datasets }, null, { months: 12 });
+        }
 
-                const taiexHistory = stockData.daily.filter(d => d['證券代號'] === 'Y9999')
-                    .map(d => ({ time: toDate(d['日期'])?.getTime(), close: parseFloatSafe(d['收盤價']) }))
-                    .filter(d => d.time && !isNaN(d.close))
-                    .sort((a,b) => a.time - b.time);
+        function renderIndividualInstChart(symbol) {
+            const stockInst = stockData.instBySymbol.get(symbol);
+            if(!stockInst || stockInst.length === 0) { 
+                updateChart('institutional-investors-chart', null, `無 ${symbol} 的三大法人資料`);
+                return;
+            }
+            
+            const dataMapper = (type) => stockInst.map(d => ({ x: d.date.getTime(), y: (d[type] || 0) / 1000 }));
 
-                const firstStockDate = stockDaily[0].time;
-                const taiexStartIndex = taiexHistory.findIndex(d => d.time >= firstStockDate);
-                let normalizedTaiex = [];
-                if (taiexStartIndex !== -1) {
-                    const firstTaiexPrice = taiexHistory[taiexStartIndex].close;
-                    if (firstTaiexPrice !== 0) {
-                        normalizedTaiex = taiexHistory.slice(taiexStartIndex).map(d => {
-                            const stockDay = stockDaily.find(sd => sd.time === d.time);
-                            if(stockDay) {
-                               return { x: d.time, y: ((d.close - firstTaiexPrice) / firstTaiexPrice) * 100 };
-                            }
-                            return null;
-                        }).filter(Boolean);
+            const datasets = [
+                { label: '外資(張)', data: dataMapper('foreign'), backgroundColor: '#3b82f6' },
+                { label: '投信(張)', data: dataMapper('it'), backgroundColor: '#10b981' },
+                { label: '自營商(張)', data: dataMapper('dealer'), backgroundColor: '#f97316' },
+            ];
+            updateChart('institutional-investors-chart', { datasets }, null, { months: 1 });
+        }
+
+        function renderIndividualRevenueChart(symbol) {
+            let stockRevenue = stockData.revenueBySymbol.get(symbol) || [];
+            
+            if (stockRevenue.length === 0) { 
+                updateChart('revenue-trend-chart-individual', null, `無 ${symbol} 的月營收資料`);
+                return;
+            }
+            
+            const chartData = stockRevenue.map(d => ({ x: d.date.getTime(), y: d.value / 1000 }));
+            updateChart('revenue-trend-chart-individual', { 
+                datasets: [{ label: '當月營收(百萬元)', data: chartData, backgroundColor: '#8b5cf6' }]
+            });
+        }
+
+        function renderRevenueSeasonalityChart(symbol, metric = 'value') {
+            const stockRevenue = stockData.revenueBySymbol.get(symbol) || [];
+            if (stockRevenue.length < 13 && (metric === 'mom' || metric === 'yoy')) {
+                updateChart('revenue-seasonality-chart', null, `資料不足，無法計算 ${metric.toUpperCase()}`);
+                return;
+            }
+            if (stockRevenue.length === 0) {
+                 updateChart('revenue-seasonality-chart', null, `無 ${symbol} 的月營收資料`);
+                 return;
+            }
+
+            const revenueByYearMonth = {};
+            stockRevenue.forEach(r => {
+                const date = r.date;
+                const year = date.getFullYear();
+                const month = date.getMonth(); // 0-11
+                if (!revenueByYearMonth[year]) revenueByYearMonth[year] = Array(12).fill(null);
+                revenueByYearMonth[year][month] = r.value;
+            });
+
+            const datasets = [];
+            const years = Object.keys(revenueByYearMonth).sort((a,b) => b-a).slice(0, 5);
+            const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6'];
+
+            years.forEach((year, index) => {
+                const yearData = Array(12).fill(null);
+                for (let month = 0; month < 12; month++) {
+                    const currentVal = revenueByYearMonth[year]?.[month];
+                    if (currentVal === null || currentVal === undefined) continue;
+
+                    if (metric === 'value') {
+                        yearData[month] = currentVal / 1000; // to Million
+                    } else if (metric === 'mom') {
+                        const prevMonth = month === 0 ? 11 : month - 1;
+                        const prevYear = month === 0 ? year - 1 : year;
+                        const prevVal = revenueByYearMonth[prevYear]?.[prevMonth];
+                        if (prevVal !== null && prevVal !== 0) yearData[month] = ((currentVal / prevVal) - 1) * 100;
+                    } else if (metric === 'yoy') {
+                        const prevYearVal = revenueByYearMonth[year - 1]?.[month];
+                        if (prevYearVal !== null && prevYearVal !== 0) yearData[month] = ((currentVal / prevYearVal) - 1) * 100;
                     }
                 }
-                
-                const candlestickData = stockDaily.map(d => ({ x: d.time, o: d.open, h: d.high, l: d.low, c: d.close }));
-                const volumeData = stockDaily.map(d => ({x: d.time, y: d.volume}));
-                const volumeColors = stockDaily.map((d, i) => {
-                    if (i === 0) return '#a0aec0';
-                    return d.close >= stockDaily[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)';
+                datasets.push({
+                    label: `${year}年`,
+                    data: yearData,
+                    borderColor: colors[index % colors.length],
+                    backgroundColor: colors[index % colors.length],
+                    tension: 0.1,
+                    borderWidth: 2
                 });
+            });
+            
+            let yAxisLabel = '營收 (百萬)';
+            if(metric === 'mom') yAxisLabel = '月增率 (%)';
+            if(metric === 'yoy') yAxisLabel = '年增率 (%)';
 
-                let datasets = [
-                    { type: 'candlestick', label: symbol, data: candlestickData, yAxisID: 'yPrice' },
-                    { type: 'bar', label: '成交量(張)', data: volumeData, yAxisID: 'yVolume', backgroundColor: volumeColors }
-                ];
-                
-                if (document.getElementById('show-ma').checked) {
-                    datasets.push({ type: 'line', label: `MA${ma1_period}`, data: calculateMA(ma1_period).map(d=>({x:d.time, y:d.value})), borderColor: '#f97316', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
-                    datasets.push({ type: 'line', label: `MA${ma2_period}`, data: calculateMA(ma2_period).map(d=>({x:d.time, y:d.value})), borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
-                    datasets.push({ type: 'line', label: `MA${ma3_period}`, data: calculateMA(ma3_period).map(d=>({x:d.time, y:d.value})), borderColor: '#8b5cf6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yPrice' });
-                }
-                if (document.getElementById('show-bb').checked) {
-                    const bb = calculateBollingerBands(bb_period, bb_stddev);
-                    datasets.push({ type: 'line', label: 'BB 上軌', data: bb.upper.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
-                    datasets.push({ type: 'line', label: 'BB 中軌', data: bb.middle.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderDash: [5, 5], borderWidth: 1, pointRadius: 0, fill: false, yAxisID: 'yPrice' });
-                    datasets.push({ type: 'line', label: 'BB 下軌', data: bb.lower.map(d=>({x:d.time, y:d.value})), borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: 'rgba(139, 92, 246, 0.1)', yAxisID: 'yPrice' });
-                }
-                 if (document.getElementById('show-taiex').checked && normalizedTaiex.length > 0) {
-                    datasets.push({ type: 'line', label: '加權指數 (%)', data: normalizedTaiex, borderColor: '#6b7280', borderWidth: 2, pointRadius: 0, yAxisID: 'yPercent' });
-                }
-
-                updateChart('candlestick-chart', { datasets });
-            } else { updateChart('candlestick-chart', null, `無 ${symbol} 的每日行情資料`); }
-
-            const stockInst = stockData.institutional.filter(d => d['證券代號'] === symbol).sort((a,b) => toDate(a['日期']) - toDate(b['日期']));
-            if(stockInst.length > 0) {
-                const labels = stockInst.map(d => toDate(d['日期'])?.getTime()).filter(Boolean);
-                const datasets = [
-                    { label: '外資(張)', data: stockInst.map(d => (parseFloatSafe(d['外資買賣超股數']) || 0) / 1000), backgroundColor: '#3b82f6' },
-                    { label: '投信(張)', data: stockInst.map(d => (parseFloatSafe(d['投信買賣超股數']) || 0) / 1000), backgroundColor: '#10b981' },
-                    { label: '自營商(張)', data: stockInst.map(d => (parseFloatSafe(d['自營商買賣超股數']) || 0) / 1000), backgroundColor: '#f97316' },
-                ].map(ds => ({ ...ds, data: ds.data.map((val, i) => ({ x: labels[i], y: val })) }));
-                updateChart('institutional-investors-chart', { datasets });
-            } else { updateChart('institutional-investors-chart', null, `無 ${symbol} 的三大法人資料`); }
-
-            const stockRevenue = stockData.revenue.filter(d => d['公司代號'] === symbol).sort((a,b) => toDate(a['資料年月']) - toDate(b['資料年月']));
-            if (stockRevenue.length > 0) {
-                 const chartData = stockRevenue.map(d => ({ x: toDate(d['資料年月'])?.getTime(), y: parseFloatSafe(d['當月營收']) / 1000000 })).filter(d => d.x);
-                 updateChart('revenue-trend-chart-individual', { 
-                     datasets: [{ label: '當月營收(百萬元)', data: chartData, backgroundColor: '#8b5cf6' }]
-                 });
-            } else { updateChart('revenue-trend-chart-individual', null, `無 ${symbol} 的月營收資料`); }
+            updateChart('revenue-seasonality-chart', {
+                labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+                datasets
+            });
+            const chart = charts['revenue-seasonality-chart'];
+            if(chart) {
+                chart.options.scales.y.title.text = yAxisLabel;
+                chart.options.plugins.datalabels.formatter = (value, context) => {
+                    const dataset = context.dataset.data;
+                    const nonNullData = dataset.filter(v => v !== null);
+                    if (nonNullData.length > 0 && value === nonNullData[nonNullData.length - 1]) {
+                        return context.dataset.label;
+                    }
+                    return '';
+                };
+                chart.update();
+            }
         }
 
         function populateIndustryDropdowns() {
             if (stockData.basic.length === 0) return;
             const industries = [...new Set(stockData.basic.map(s => s['產業別']))].filter(Boolean).sort();
-            const selects = [
-                document.getElementById('comparison-industry'),
-                document.getElementById('revenue-industry-filter'),
-                document.getElementById('inst-trend-industry-filter')
-            ];
-            
-            selects.forEach(select => {
-                if (!select) return;
-                const isComparison = select.id === 'comparison-industry';
-                const firstOption = isComparison ? '-- 選擇產業 --' : '全產業';
-                select.innerHTML = `<option value="">${firstOption}</option>`;
-                industries.forEach(i => select.innerHTML += `<option value="${i}">${i}</option>`);
-            });
         }
 
-        function compareStocks() {
-            const stockSymbolsInput = document.getElementById('comparison-stocks').value.split(',').map(s => s.trim()).filter(Boolean);
-            const industry = document.getElementById('comparison-industry').value;
-            let symbolsToCompare = stockSymbolsInput;
-            if (industry) {
-                const industrySymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']); 
-                symbolsToCompare = [...new Set([...symbolsToCompare, ...industrySymbols])];
+        function renderPeerComparisonChart(symbol) {
+            const stockInfo = stockData.basic.find(s => s['證券代號'] === symbol);
+            if (!stockInfo || !stockInfo['產業別']) {
+                updateChart('comparison-chart', null, '無產業資料，無法進行同業比較');
+                return;
             }
-            if (symbolsToCompare.length === 0) { showModal('提示', '<p>請輸入股票代號或選擇產業</p>'); return; }
-
-            const datasets = [];
-            const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#d946ef', '#06b6d4', '#f59e0b'];
             
-            symbolsToCompare.slice(0, 8).forEach((symbol, index) => {
-                const stockDaily = stockData.daily.filter(d => d['證券代號'] === symbol).map(d => ({...d, dateObj: toDate(d['日期'])})).filter(d => d.dateObj).sort((a,b) => a.dateObj - b.dateObj);
-                if (stockDaily.length > 0) {
-                    const firstPrice = parseFloatSafe(stockDaily[0]['收盤價']);
-                    if (isNaN(firstPrice) || firstPrice === 0) return;
-                    const normalizedData = stockDaily.map(d => ({ x: d.dateObj.getTime(), y: ((parseFloatSafe(d['收盤價']) - firstPrice) / firstPrice * 100) })).filter(d => d.x && !isNaN(d.y));
-                    const stockInfo = stockData.basic.find(s=>s['證券代號']===symbol);
-                    const label = stockInfo ? `${symbol} ${stockInfo['證券名稱']}` : symbol;
-                    datasets.push({ label, data: normalizedData, borderColor: colors[index % colors.length], tension: 0.1, pointRadius: 0, borderWidth: 2 });
+            const industry = stockInfo['產業別'];
+            const peerSymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']);
+            
+            const selectedDates = datePickers.peerComparison?.selectedDates;
+            let startDate, endDate;
+
+            if (selectedDates && selectedDates.length === 2) {
+                startDate = new Date(selectedDates[0].setHours(0,0,0,0));
+                endDate = new Date(selectedDates[1].setHours(0,0,0,0));
+            } else {
+                endDate = stockData.tradingDates.length > 0 ? toDate(stockData.tradingDates[0]) : new Date();
+                endDate.setHours(0,0,0,0);
+                startDate = new Date(endDate.getFullYear(), 0, 1);
+            }
+
+            const tradingDaysInRange = stockData.tradingDates
+                .map(d => toDate(d))
+                .filter(d => d >= startDate && d <= endDate)
+                .sort((a,b) => a - b);
+            
+            if (tradingDaysInRange.length === 0) {
+                updateChart('comparison-chart', null, '選擇範圍內無交易資料');
+                return;
+            }
+
+            // 計算個股累積報酬
+            const targetStockData = stockData.dailyBySymbol.get(symbol)
+                .filter(d => d.date >= startDate && d.date <= endDate)
+                .sort((a,b) => a.date - b.date);
+
+            let targetStockCumulativeReturn = [];
+            if (targetStockData.length > 0) {
+                const firstPrice = targetStockData[0].close;
+                if (!isNaN(firstPrice) && firstPrice > 0) {
+                    targetStockCumulativeReturn = targetStockData.map(d => ({
+                        x: d.date.getTime(),
+                        y: ((d.close - firstPrice) / firstPrice) * 100
+                    }));
+                }
+            }
+
+            // 計算產業平均累積報酬
+            const dailyIndustryReturns = new Map();
+            for (const day of tradingDaysInRange) {
+                dailyIndustryReturns.set(day.getTime(), []);
+            }
+            
+            const dailyDataBySymbolByDate = new Map();
+            peerSymbols.forEach(peer => {
+                const daily = stockData.dailyBySymbol.get(peer);
+                if (daily) {
+                    const map = new Map();
+                    daily.forEach(d => map.set(d.date.getTime(), d.close));
+                    dailyDataBySymbolByDate.set(peer, map);
                 }
             });
 
+            for (let i = 1; i < tradingDaysInRange.length; i++) {
+                const currentDay = tradingDaysInRange[i];
+                const prevDay = tradingDaysInRange[i-1];
+                
+                for (const peer of peerSymbols) {
+                    const peerPrices = dailyDataBySymbolByDate.get(peer);
+                    if (peerPrices) {
+                        const currentPrice = peerPrices.get(currentDay.getTime());
+                        const prevPrice = peerPrices.get(prevDay.getTime());
+                        if (currentPrice && prevPrice && !isNaN(currentPrice) && !isNaN(prevPrice) && prevPrice > 0) {
+                            const dailyReturn = (currentPrice - prevPrice) / prevPrice;
+                            dailyIndustryReturns.get(currentDay.getTime()).push(dailyReturn);
+                        }
+                    }
+                }
+            }
+
+            let industryAvgCumulativeReturn = [];
+            let cumulativeReturn = 0;
+            industryAvgCumulativeReturn.push({ x: tradingDaysInRange[0].getTime(), y: 0 });
+
+            for (let i = 1; i < tradingDaysInRange.length; i++) {
+                const day = tradingDaysInRange[i];
+                const returns = dailyIndustryReturns.get(day.getTime());
+                if (returns.length > 0) {
+                    const avgDailyReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+                    cumulativeReturn = (1 + cumulativeReturn/100) * (1 + avgDailyReturn) * 100 - 100;
+                }
+                industryAvgCumulativeReturn.push({ x: day.getTime(), y: cumulativeReturn });
+            }
+
+            const datasets = [];
+            if (targetStockCumulativeReturn.length > 0) {
+                 datasets.push({ 
+                    label: `${symbol} ${stockInfo['證券名稱']}`, 
+                    data: targetStockCumulativeReturn, 
+                    borderColor: '#e11d48', 
+                    tension: 0.1, 
+                    pointRadius: 0, 
+                    borderWidth: 3
+                });
+            }
+            if (industryAvgCumulativeReturn.length > 0) {
+                 datasets.push({ 
+                    label: `${industry} 平均`, 
+                    data: industryAvgCumulativeReturn, 
+                    borderColor: '#3b82f6', 
+                    tension: 0.1, 
+                    pointRadius: 0, 
+                    borderWidth: 2,
+                    borderDash: [5, 5]
+                });
+            }
+            
             updateChart('comparison-chart', { datasets });
         }
         
-        // --- 輔助與通用函式 ---
         function getReportName(key) {
-            const names = { basic: '基本資料', daily: '每日行情', institutional: '三大法人', revenue: '每月營收' };
+            const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收' };
             return names[key] || key;
+        }
+        
+        function setupDataReloadControls() {
+            const select = document.getElementById('reload-start-year');
+            const button = document.getElementById('reload-data-btn');
+            const currentYear = new Date().getFullYear();
+            for (let year = 2020; year <= currentYear; year++) {
+                select.innerHTML += `<option value="${year}">${year}年</option>`;
+            }
+            select.value = 2024;
+
+            button.addEventListener('click', () => {
+                const selectedYear = parseInt(select.value, 10);
+                reloadData(selectedYear);
+            });
         }
 
         function setupEventListeners() {
-            document.getElementById('analyze-stock-btn')?.addEventListener('click', analyzeStock);
-            document.getElementById('compare-btn')?.addEventListener('click', compareStocks);
-            document.getElementById('revenue-industry-filter')?.addEventListener('change', renderMarketRevenueChart);
-            document.getElementById('inst-trend-industry-filter')?.addEventListener('change', renderMarketInstChart);
-            document.getElementById('inst-trend-type-filter')?.addEventListener('change', renderMarketInstChart);
+            const stockSymbolInput = document.getElementById('stock-symbol');
+            const suggestionsContainer = document.getElementById('autocomplete-suggestions');
             
-            document.getElementById('dashboard-date-selector').addEventListener('change', (e) => {
-                updateDashboard(e.target.value);
+            const debouncedSearch = debounce((query) => {
+                if (!query) {
+                    suggestionsContainer.classList.add('hidden');
+                    return;
+                }
+                const matches = stockData.basic.filter(s => s['證券代號'].startsWith(query) || s['證券名稱'].includes(query)).slice(0, 10);
+                suggestionsContainer.innerHTML = '';
+                if (matches.length > 0) {
+                    matches.forEach(s => {
+                        const div = document.createElement('div');
+                        div.textContent = `${s['證券代號']} ${s['證券名稱']}`;
+                        div.dataset.symbol = s['證券代號'];
+                        div.addEventListener('click', () => {
+                            stockSymbolInput.value = s['證券代號'];
+                            suggestionsContainer.classList.add('hidden');
+                            analyzeStock(s['證券代號']);
+                        });
+                        suggestionsContainer.appendChild(div);
+                    });
+                    suggestionsContainer.classList.remove('hidden');
+                } else {
+                    suggestionsContainer.classList.add('hidden');
+                }
+            }, 200);
+
+            stockSymbolInput.addEventListener('input', () => {
+                debouncedSearch(stockSymbolInput.value.trim());
             });
             
+            stockSymbolInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    analyzeStock(stockSymbolInput.value.trim());
+                    suggestionsContainer.classList.add('hidden');
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!suggestionsContainer.contains(e.target) && e.target !== stockSymbolInput) {
+                    suggestionsContainer.classList.add('hidden');
+                }
+            });
+
             const indicatorControls = document.getElementById('indicator-controls');
             if(indicatorControls) {
                 indicatorControls.addEventListener('change', (e) => {
                     if (document.getElementById('stock-symbol').value.trim()) {
-                        analyzeStock();
+                        renderCandlestickChart(document.getElementById('stock-symbol').value.trim());
                     }
                 });
             }
-        }
+            
+            const seasonalityControls = document.getElementById('revenue-seasonality-controls');
+            if(seasonalityControls) {
+                seasonalityControls.querySelectorAll('.control-btn').forEach(btn => {
+                    btn.addEventListener('click', e => {
+                        if (e.currentTarget.classList.contains('active')) return;
+                        const currentActive = seasonalityControls.querySelector('.active');
+                        if (currentActive) currentActive.classList.remove('active');
+                        e.currentTarget.classList.add('active');
+                        const symbol = document.getElementById('stock-symbol').value.trim();
+                        if (symbol) {
+                            renderRevenueSeasonalityChart(symbol, e.currentTarget.dataset.metric);
+                        }
+                    });
+                });
+            }
 
+            datePickers.peerComparison = flatpickr("#peer-comparison-datepicker", {
+                mode: "range", dateFormat: "Y-m-d", locale: "zh_tw",
+                onChange: () => {
+                    const symbol = document.getElementById('stock-symbol').value.trim();
+                    if(symbol) renderPeerComparisonChart(symbol);
+                }
+            });
+        }
+        
         function initAllCharts() {
-            const commonOptions = (extraPlugins = {}) => ({ 
-                responsive: true, 
-                maintainAspectRatio: false,
+            const zoomPluginOptions = {
+                pan: { enabled: true, mode: 'x', onPanComplete: ({chart}) => chart.update('none') },
+                zoom: { 
+                    wheel: { enabled: true }, 
+                    pinch: { enabled: true }, 
+                    drag: { enabled: false },
+                    mode: 'x',
+                    onZoomComplete: ({chart}) => chart.update('none')
+                }
+            };
+
+            const commonOptions = (extraPlugins = {}, enableZoom = true) => ({ 
+                responsive: true, maintainAspectRatio: false,
+                animation: false,
                 plugins: {
                     legend: { display: true, position: 'top', labels: { font: { size: 10 } } },
-                    tooltip: { 
-                        mode: 'index', intersect: false,
-                        bodyFont: { size: 12 }, 
-                        titleFont: { size: 14 },
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) { label += ': '; }
-                                const isHorizontal = context.chart.options.indexAxis === 'y';
-                                const value = isHorizontal ? context.parsed.x : context.parsed.y;
-                                if (value !== null) {
-                                    label += formatNumber(value, 2);
-                                }
-                                return label;
-                            }
-                        }
-                    },
+                    tooltip: { mode: 'index', intersect: false, bodyFont: { size: 12 }, titleFont: { size: 14 }, callbacks: { label: (c) => `${c.dataset.label || ''}: ${formatNumber(c.parsed.y, 2)}` } },
                     datalabels: { display: false },
+                    ...(enableZoom && { zoom: zoomPluginOptions }),
                     ...extraPlugins
                 }
             });
-            const timeScale = (unit = 'day') => ({ type: 'time', time: { unit, tooltipFormat: 'yyyy-MM-dd' }, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, source: 'data' } });
-            const valueScale = (position = 'left', display = true) => ({ 
-                position,
-                display,
-                beginAtZero: false, 
-                grid: { color: '#e5e7eb' }, 
-                ticks: { 
-                    font: { size: 10 },
-                    callback: (value) => formatNumber(value, 0)
-                } 
-            });
+            const categoryScale = (display = true) => ({ type: 'category', display, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 20, autoSkip: true, autoSkipPadding: 20 } });
+            const timeScale = (unit = 'day') => ({ type: 'time', time: { unit, tooltipFormat: 'yyyy-MM-dd' }, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, source: 'auto' } });
+            const valueScale = (position = 'left', display = true, title = '') => ({ position, display, beginAtZero: false, grid: { color: '#e5e7eb' }, ticks: { font: { size: 10 }, callback: (v) => formatNumber(v, 0) }, title: { display: !!title, text: title, font: {size: 12} } });
 
             const chartConfigs = {
-                'distribution-chart': { type: 'bar', options: { ...commonOptions({ tooltip: { mode: 'y', intersect: true } }), indexAxis: 'y', scales: { x: { ...valueScale(), beginAtZero: true }, y: { ticks: { font: {size: 10} } } } } },
-                'sector-up-down-chart': { type: 'bar', options: { ...commonOptions({legend: {position: 'bottom'}}), scales: { x: { stacked: true, grid: { display: false }, ticks: {font: {size: 9}}}, y: { stacked: true, grid: { color: '#e5e7eb' }, ticks: { font: {size: 10} } } } } },
-                'sector-perf-chart': { type: 'bar', options: { ...commonOptions({legend: {display: false}, tooltip: { mode: 'y', intersect: true } }), indexAxis: 'y', scales: { x: { ticks: { callback: (v) => `${v.toFixed(1)}%` } }, y: { ticks: { font: {size: 9} } } } } },
-                'market-revenue-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: timeScale('month'), y: {...valueScale(), beginAtZero: false, ticks: { callback: (v) => `${formatNumber(v,0)}億` } } } } },
-                'market-inst-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { stacked: false, ...timeScale() }, y: { stacked: false, ...valueScale(), ticks: { callback: (v) => `${formatNumber(v,0)}億` } } } } },
+                'distribution-chart': { type: 'bar', options: { ...commonOptions({ tooltip: { mode: 'y', intersect: true } }, false), indexAxis: 'y', scales: { x: { ...valueScale(), beginAtZero: true }, y: { ticks: { font: {size: 10} } } } } },
+                'sector-up-down-chart': { type: 'bar', options: { ...commonOptions({legend: {position: 'bottom'}}, false), scales: { x: { stacked: true, grid: { display: false }, ticks: {font: {size: 9}, autoSkip: false} }, yCount: { type: 'linear', position: 'left', stacked: true, grid: { color: '#e5e7eb' }, title: { display: true, text: '家數' } }, yPerf: { type: 'linear', position: 'right', grid: { display: false }, title: { display: true, text: '平均漲跌幅(%)' }, ticks: { color: '#3b82f6', callback: (v) => `${v.toFixed(1)}%` } } } } },
+                'inst-by-sector-chart': { type: 'bar', options: { ...commonOptions({tooltip: { mode: 'y', intersect: true } }, false), indexAxis: 'y', scales: { x: { stacked: true, ticks: { callback: (v) => `${formatNumber(v,1)}億` } }, y: { stacked: true, ticks: { font: {size: 9}, autoSkip: false } } } } },
+                'market-revenue-chart': { type: 'bar', options: { ...commonOptions({}, false), scales: { x: timeScale('month'), y: {...valueScale(undefined, true, '百萬元'), beginAtZero: false} } } },
+                'market-inst-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { ...categoryScale(), stacked: true }, y: { stacked: true, ...valueScale(undefined, true, '億元') } } } },
+                'market-breadth-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: categoryScale(), y: valueScale('left', true, '家數') } } },
                 'candlestick-chart': {
                     type: 'candlestick', 
-                    options: { 
+                    options: {
                         ...commonOptions({ legend: { display: false } }), 
                         scales: { 
                             x: timeScale(), 
-                            yPrice: { position: 'right', stack: 'stock_stack', stackWeight: 3, grid: { color: '#e5e7eb' }, ticks: { font: { size: 10 } } },
-                            yVolume: { position: 'right', stack: 'stock_stack', stackWeight: 1, grid: { display: false }, ticks: { font: { size: 9 }, callback: (v) => v > 1000 ? `${(v/1000).toFixed(0)}k` : v } },
-                            yPercent: { position: 'left', display: false, grid: { display: false }, ticks: { font: { size: 10 }, callback: (v) => `${v.toFixed(1)}%` } }
-                        } 
+                            yPrice: { position: 'right', stack: 'stock_stack', stackWeight: 3, grid: { color: '#e5e7eb' }, afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max) && axis.max > axis.min){ axis.min *= 0.9; axis.max *= 1.1; } } },
+                            yVolume: { position: 'right', stack: 'stock_stack', stackWeight: 1, grid: { display: false }, ticks: { font: { size: 9 }, callback: (v) => v > 1000 ? `${(v/1000).toFixed(0)}k` : v } }
+                        }
+                    }
+                },
+                'institutional-investors-chart': { 
+                    type: 'bar', 
+                    options: { 
+                        ...commonOptions(), 
+                        scales: { 
+                            x: { ...timeScale(), stacked: true }, 
+                            y: { stacked: true, ...valueScale(), afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max)){ const range = axis.max - axis.min; if(range > 0) { axis.min -= range*0.1; axis.max += range*0.1; } } } }
+                        }
                     } 
                 },
-                'institutional-investors-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { stacked: true, ...timeScale() }, y: { stacked: true, ...valueScale() } } } },
-                'revenue-trend-chart-individual': { type: 'bar', options: { ...commonOptions({ datalabels: { display: false } }), scales: { x: timeScale('month'), y: {...valueScale(), beginAtZero: false, ticks: {callback: (v) => `${formatNumber(v,0)}M`}} } } },
-                'comparison-chart': { type: 'line', options: { ...commonOptions(), scales: { x: timeScale(), y: { ...valueScale(), ticks: { callback: (v) => `${v.toFixed(1)}%` } } } } }
+                'revenue-trend-chart-individual': { type: 'bar', options: { ...commonOptions({ datalabels: { display: false } }), scales: { x: timeScale('month'), y: {...valueScale(undefined, true, '百萬元'), beginAtZero: false} } } },
+                'revenue-seasonality-chart': {
+                    type: 'line', 
+                    options: { 
+                        ...commonOptions({ legend: {display: false}, datalabels: { align: 'right', anchor: 'end', offset: 8, font: { weight: 'bold' }, color: context => context.dataset.borderColor } }, false),
+                        layout: { padding: { right: 60 } },
+                        scales: { x: { type: 'category', grid: { display: false } }, y: valueScale('left', true, '營收 (百萬)') } 
+                    }
+                },
+                'market-revenue-seasonality-chart': {
+                    type: 'line', 
+                    options: { 
+                        ...commonOptions({ legend: {display: false}, datalabels: { align: 'right', anchor: 'end', offset: 8, font: { weight: 'bold' }, color: context => context.dataset.borderColor } }, false),
+                        layout: { padding: { right: 60 } },
+                        scales: { x: { type: 'category', grid: { display: false } }, y: valueScale('left', true, '總營收 (百萬)') } 
+                    }
+                },
+                'comparison-chart': { type: 'line', options: { ...commonOptions(), scales: { x: timeScale(), y: { ...valueScale(undefined, true, '%'), ticks: { callback: (v) => `${v.toFixed(1)}%` } } } } }
             };
 
             for (const id in chartConfigs) {
@@ -1644,7 +2451,7 @@
             }
         }
 
-        function updateChart(chartId, data, placeholderText = null) {
+        function updateChart(chartId, data, placeholderText = null, defaultRange = null) {
             const chart = charts[chartId];
             const canvas = document.getElementById(chartId);
             if (!chart || !canvas) return;
@@ -1654,23 +2461,40 @@
 
             if (placeholderText || !data || !data.datasets || data.datasets.length === 0 || data.datasets.every(ds => ds.data.length === 0)) {
                 canvas.style.display = 'none';
-                if (placeholder) {
-                    placeholder.textContent = placeholderText || '無資料可顯示';
-                    placeholder.style.display = 'flex';
-                }
+                if (placeholder) { placeholder.textContent = placeholderText || '無資料可顯示'; placeholder.style.display = 'flex'; }
             } else {
                 if (placeholder) placeholder.style.display = 'none';
                 canvas.style.display = 'block';
                 
-                if (chartId === 'candlestick-chart') {
-                    const hasTaiex = data.datasets.some(ds => ds.yAxisID === 'yPercent');
-                    chart.options.scales.yPercent.display = hasTaiex;
+                if(data.labels) chart.data.labels = data.labels;
+                chart.data.datasets = data.datasets;
+
+                chart.options.scales.x.min = undefined;
+                chart.options.scales.x.max = undefined;
+
+                if (defaultRange) {
+                    const scaleType = chart.options.scales.x.type;
+                    if (scaleType === 'time' && defaultRange.months) {
+                         const firstDatasetPoints = chart.data.datasets[0]?.data;
+                        if (firstDatasetPoints && firstDatasetPoints.length > 0) {
+                            const allX = firstDatasetPoints.map(p => p.x).filter(x => x !== null);
+                            if (allX.length > 0) {
+                                const lastDate = new Date(Math.max(...allX));
+                                const startDate = new Date(lastDate);
+                                startDate.setMonth(startDate.getMonth() - defaultRange.months);
+                                chart.options.scales.x.min = startDate.getTime();
+                                chart.options.scales.x.max = lastDate.getTime();
+                            }
+                        }
+                    } else if (scaleType === 'category' && defaultRange.items) {
+                        const dataLength = chart.data.labels.length;
+                        if (dataLength > defaultRange.items) {
+                            chart.options.scales.x.min = dataLength - defaultRange.items;
+                            chart.options.scales.x.max = dataLength - 1;
+                        }
+                    }
                 }
                 
-                if(data.labels) {
-                    chart.data.labels = data.labels;
-                }
-                chart.data.datasets = data.datasets;
                 chart.update('none');
             }
         }
@@ -1687,21 +2511,11 @@
                     l.classList.toggle('text-indigo-600', isActive);
                     l.classList.toggle('font-bold', isActive);
                 });
-                pages.forEach(page => {
-                    const pageId = '#' + page.id;
-                    page.classList.toggle('active', pageId === targetId);
-                });
+                pages.forEach(page => page.classList.toggle('active', '#' + page.id === targetId));
                 lucide.createIcons();
             };
 
-            navLinks.forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    const targetId = link.getAttribute('href');
-                    if (window.location.hash !== targetId) window.location.hash = targetId;
-                });
-            });
-            
+            navLinks.forEach(link => link.addEventListener('click', (e) => { e.preventDefault(); if (window.location.hash !== link.getAttribute('href')) window.location.hash = link.getAttribute('href'); }));
             window.addEventListener('hashchange', () => updateActiveState(window.location.hash || '#dashboard'));
             updateActiveState(initialHash);
         }
