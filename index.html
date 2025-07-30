@@ -630,7 +630,6 @@
                     const quarterFolders = await quarterFoldersResponse.json();
                     
                     for (const quarterItem of quarterFolders) {
-                        // [修正] 正規表示式，符合 "1Q", "2Q" 等格式
                         if (quarterItem.type !== 'dir' || !/^\dQ$/.test(quarterItem.name)) continue;
                         const quarter = quarterItem.name;
 
@@ -639,15 +638,17 @@
                             allPromises.push(fetch(financialsUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'financials', data})));
                         }
 
-                        const monthFoldersResponse = await fetch(quarterItem.url);
-                        if (!monthFoldersResponse.ok) continue;
-                        const monthFolders = await monthFoldersResponse.json();
+                        if (year >= dailyStartYear) {
+                            const monthFoldersResponse = await fetch(quarterItem.url);
+                            if (!monthFoldersResponse.ok) continue;
+                            const monthFolders = await monthFoldersResponse.json();
 
-                        for (const monthItem of monthFolders) {
-                             if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
-                                const month = monthItem.name;
-                                const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
-                                allPromises.push(fetch(dailyUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'daily', data})));
+                            for (const monthItem of monthFolders) {
+                                 if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
+                                    const month = monthItem.name;
+                                    const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
+                                    allPromises.push(fetch(dailyUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'daily', data})));
+                                }
                             }
                         }
                     }
@@ -682,7 +683,7 @@
                     }
                 });
                 
-                const totalRecords = stockData.daily.length + stockData.revenue.length + stockData.basic.length + stockData.financials.length;
+                const totalRecords = stockData.daily.length + (Array.isArray(stockData.revenue) ? stockData.revenue.length : 0) + stockData.basic.length + stockData.financials.length;
                 sidebarInfoText.textContent = totalRecords > 0 ? `已從 GitHub 載入資料。` : '未找到初始資料。';
 
             } catch (error) {
@@ -793,9 +794,15 @@
             return !isNaN(d) ? d : null;
         };
 
-        const toDisplayDate = (dateObj) => {
+        const toDisplayDate = (dateObj, format = 'YYYY/MM/DD') => {
             if (!(dateObj instanceof Date) || isNaN(dateObj)) return '';
-            return `${dateObj.getFullYear()}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}`;
+            const year = dateObj.getFullYear();
+            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+            const day = dateObj.getDate().toString().padStart(2, '0');
+            if (format === 'YYYY-MM-DD') {
+                return `${year}-${month}-${day}`;
+            }
+            return `${year}/${month}/${day}`;
         };
 
         const formatDateForDisplay = (dateStr) => {
@@ -934,7 +941,7 @@
             });
 
             if (stockData.tradingDates.length > 0) {
-                if (!dashboardState.selectedDate || !stockData.tradingDates.includes(toDisplayDate(dashboardState.selectedDate))) {
+                if (!dashboardState.selectedDate || !stockData.tradingDates.includes(dashboardState.selectedDate.toISOString().slice(0, 10))) {
                     dashboardState.selectedDate = toDate(stockData.tradingDates[0]);
                 }
                 datePickers.dashboard = flatpickr("#dashboard-date-picker", {
@@ -1042,7 +1049,6 @@
 
                 const endPrice = getActivePrice(endData);
                 
-                // [修正] 1D 漲跌幅計算邏輯
                 const endIndex = dailyHistory.findIndex(h => h.date.getTime() === endData.date.getTime());
                 const prevPriceRecord = endIndex > 0 ? dailyHistory[endIndex - 1] : null;
                 const prevPrice = prevPriceRecord ? getActivePrice(prevPriceRecord) : NaN;
@@ -1068,7 +1074,6 @@
                     }
                 });
                 
-                // [修正] 市值計算增加備援機制
                 let sharesOutstandingToUse = endData.sharesOutstanding;
                 if (!sharesOutstandingToUse || isNaN(sharesOutstandingToUse)) {
                     for (let i = endIndex - 1; i >= 0; i--) {
@@ -1561,7 +1566,7 @@
                 ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']))
                 : new Set(Array.from(stockData.dailyBySymbol.keys()));
             
-            const endIdx = stockData.tradingDates.findIndex(dStr => toDate(dStr).getTime() === dashboardState.selectedDate.getTime());
+            const endIdx = stockData.tradingDates.findIndex(dStr => dStr === toDisplayDate(dashboardState.selectedDate, 'YYYY-MM-DD'));
             const validEndIdx = endIdx === -1 ? 0 : endIdx;
             const startIdx = Math.min(stockData.tradingDates.length - 1, validEndIdx + 9);
             const dateRange = stockData.tradingDates.slice(validEndIdx, startIdx + 1);
@@ -1573,7 +1578,7 @@
                 const history = stockData.dailyBySymbol.get(symbol);
                 if (history) {
                     history.forEach(d => {
-                        const dateStr = toDisplayDate(d.date);
+                        const dateStr = d.date.toISOString().slice(0, 10);
                         if (dailyInstValue[dateStr]) {
                             const price = d.close;
                             if (price) {
@@ -1978,8 +1983,8 @@
                 const latestRevenue = revenueHistory[revenueHistory.length - 1].value;
                 const prevMonthRevenue = revenueHistory[revenueHistory.length - 2].value;
                 const prevYearRevenue = revenueHistory[revenueHistory.length - 13].value;
-                if (prevMonthRevenue) mom = ((latestRevenue / prevMonthRevenue) - 1) * 100;
-                if (prevYearRevenue) yoy = ((latestRevenue / prevYearRevenue) - 1) * 100;
+                if (prevMonthRevenue > 0) mom = ((latestRevenue / prevMonthRevenue) - 1) * 100;
+                if (prevYearRevenue > 0) yoy = ((latestRevenue / prevYearRevenue) - 1) * 100;
             }
 
             const industryAverages = await calculateIndustryAverages(symbol, latestDate);
@@ -1991,14 +1996,29 @@
                 </div>`;
 
             container.innerHTML = `
+                <!-- 個股指標 -->
                 ${cardHTML('總報酬 (MTD)', mtdData.perf, '%', numColor(mtdData.perf))}
                 ${cardHTML('總報酬 (YTD)', ytdData.perf, '%', numColor(ytdData.perf))}
                 ${cardHTML('營收 MoM', mom, '%', numColor(mom))}
                 ${cardHTML('營收 YoY', yoy, '%', numColor(yoy))}
-                ${cardHTML('外資買超 (MTD)', mtdData.foreignValue / 100000000, '億', numColor(mtdData.foreignValue), 0)}
-                ${cardHTML('投信買超 (MTD)', mtdData.itValue / 100000000, '億', numColor(mtdData.itValue), 0)}
-                ${cardHTML('外資買超 (YTD)', ytdData.foreignValue / 100000000, '億', numColor(ytdData.foreignValue), 0)}
-                ${cardHTML('投信買超 (YTD)', ytdData.itValue / 100000000, '億', numColor(ytdData.itValue), 0)}
+                ${cardHTML('外資買超 (MTD)', mtdData.foreignValue / 1e8, '億', numColor(mtdData.foreignValue), 0)}
+                ${cardHTML('投信買超 (MTD)', mtdData.itValue / 1e8, '億', numColor(mtdData.itValue), 0)}
+                ${cardHTML('外資買超 (YTD)', ytdData.foreignValue / 1e8, '億', numColor(ytdData.foreignValue), 0)}
+                ${cardHTML('投信買超 (YTD)', ytdData.itValue / 1e8, '億', numColor(ytdData.itValue), 0)}
+                
+                <!-- 分隔線與同業平均標題 -->
+                <div class="col-span-full border-t my-2"></div>
+                <h3 class="col-span-full text-md font-semibold text-gray-700 -mt-2 mb-2">同產業個股平均</h3>
+
+                <!-- 同業平均指標 -->
+                ${cardHTML('總報酬 (MTD)', industryAverages.avgMtdPerf, '%', numColor(industryAverages.avgMtdPerf))}
+                ${cardHTML('總報酬 (YTD)', industryAverages.avgYtdPerf, '%', numColor(industryAverages.avgYtdPerf))}
+                ${cardHTML('營收 MoM', industryAverages.avgMom, '%', numColor(industryAverages.avgMom))}
+                ${cardHTML('營收 YoY', industryAverages.avgYoy, '%', numColor(industryAverages.avgYoy))}
+                ${cardHTML('外資買超 (MTD)', industryAverages.avgMtdForeignValue / 1e8, '億', numColor(industryAverages.avgMtdForeignValue), 0)}
+                ${cardHTML('投信買超 (MTD)', industryAverages.avgMtdItValue / 1e8, '億', numColor(industryAverages.avgMtdItValue), 0)}
+                ${cardHTML('外資買超 (YTD)', industryAverages.avgYtdForeignValue / 1e8, '億', numColor(industryAverages.avgYtdForeignValue), 0)}
+                ${cardHTML('投信買超 (YTD)', industryAverages.avgYtdItValue / 1e8, '億', numColor(industryAverages.avgYtdItValue), 0)}
             `;
         }
         
@@ -2245,6 +2265,7 @@
             }
             
             const industry = stockInfo['產業別'];
+            const peerSymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']);
             
             const selectedDates = datePickers.peerComparison?.selectedDates;
             let startDate, endDate;
@@ -2271,15 +2292,11 @@
             const calculateCumulativeReturn = (symbolToCalc) => {
                 const history = stockData.dailyBySymbol.get(symbolToCalc);
                 if (!history) return [];
-                
                 const firstDataPoint = history.find(d => d.date >= tradingDaysInRange[0] && d.date <= tradingDaysInRange[tradingDaysInRange.length - 1]);
                 if (!firstDataPoint) return [];
-                
                 const firstPrice = getActivePrice(firstDataPoint);
                 if (isNaN(firstPrice) || firstPrice === 0) return [];
-                
                 const dataInRange = history.filter(d => d.date >= firstDataPoint.date && d.date <= tradingDaysInRange[tradingDaysInRange.length - 1]);
-                
                 return dataInRange.map(d => ({
                     x: d.date.getTime(),
                     y: ((getActivePrice(d) - firstPrice) / firstPrice) * 100
@@ -2287,7 +2304,6 @@
             };
 
             const targetStockCumulativeReturn = calculateCumulativeReturn(symbol);
-            
             const datasets = [];
             if (targetStockCumulativeReturn.length > 0) {
                  datasets.push({ 
@@ -2300,6 +2316,63 @@
                 });
             }
             
+            const dailyIndustryReturns = new Map();
+            tradingDaysInRange.forEach(day => dailyIndustryReturns.set(day.getTime(), []));
+            
+            const dailyDataBySymbolByDate = new Map();
+            peerSymbols.forEach(peer => {
+                const daily = stockData.dailyBySymbol.get(peer);
+                if (daily) {
+                    const map = new Map();
+                    daily.forEach(d => map.set(d.date.getTime(), getActivePrice(d)));
+                    dailyDataBySymbolByDate.set(peer, map);
+                }
+            });
+
+            for (let i = 1; i < tradingDaysInRange.length; i++) {
+                const currentDay = tradingDaysInRange[i];
+                const prevDay = tradingDaysInRange[i-1];
+                for (const peer of peerSymbols) {
+                    const peerPrices = dailyDataBySymbolByDate.get(peer);
+                    if (peerPrices) {
+                        const currentPrice = peerPrices.get(currentDay.getTime());
+                        const prevPrice = peerPrices.get(prevDay.getTime());
+                        if (currentPrice && prevPrice && !isNaN(currentPrice) && !isNaN(prevPrice) && prevPrice > 0) {
+                            const dailyReturn = (currentPrice - prevPrice) / prevPrice;
+                            dailyIndustryReturns.get(currentDay.getTime()).push(dailyReturn);
+                        }
+                    }
+                }
+            }
+
+            let industryAvgCumulativeReturn = [];
+            let cumulativeReturn = 0;
+            industryAvgCumulativeReturn.push({ x: tradingDaysInRange[0].getTime(), y: 0 });
+
+            for (let i = 1; i < tradingDaysInRange.length; i++) {
+                const day = tradingDaysInRange[i];
+                const returns = dailyIndustryReturns.get(day.getTime());
+                let nextCumulativeReturn = cumulativeReturn;
+                if (returns.length > 0) {
+                    const avgDailyReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+                    nextCumulativeReturn = (1 + cumulativeReturn/100) * (1 + avgDailyReturn) * 100 - 100;
+                }
+                industryAvgCumulativeReturn.push({ x: day.getTime(), y: nextCumulativeReturn });
+                cumulativeReturn = nextCumulativeReturn;
+            }
+
+            if (industryAvgCumulativeReturn.length > 0) {
+                 datasets.push({ 
+                    label: `${industry} 平均`, 
+                    data: industryAvgCumulativeReturn, 
+                    borderColor: '#3b82f6', 
+                    tension: 0.1, 
+                    pointRadius: 0, 
+                    borderWidth: 2,
+                    borderDash: [5, 5]
+                });
+            }
+
             updateChart('comparison-chart', { datasets });
         }
         
