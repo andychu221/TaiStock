@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v18 - 優化版</title>
+    <title>台股儀表板 v21</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -88,6 +88,57 @@
             font-weight: 700;
             margin-top: 0.25rem;
         }
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 110px;
+            height: 34px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #4f46e5;
+        }
+        input:checked + .slider:before {
+            transform: translateX(76px);
+        }
+        .slider-text {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 11px;
+            font-weight: 500;
+            color: white;
+            user-select: none;
+        }
+        .slider-text.on { left: 12px; }
+        .slider-text.off { right: 12px; }
     </style>
 </head>
 <body class="flex h-screen text-gray-800">
@@ -116,7 +167,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v18</span>
+            <span>TaviStock v21</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -131,6 +182,9 @@
             <a href="#monthly-revenue" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
                 <i data-lucide="file-bar-chart-2" class="mr-3 w-5 h-5"></i>每月營收
             </a>
+            <a href="#financials" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
+                <i data-lucide="book-open-check" class="mr-3 w-5 h-5"></i>財務報表
+            </a>
             <a href="#stock-analysis" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
                 <i data-lucide="candlestick-chart" class="mr-3 w-5 h-5"></i>個股分析
             </a>
@@ -141,7 +195,19 @@
                 </a>
             </div>
         </nav>
-        <div class="p-4 border-t">
+        <div class="p-4 border-t space-y-3">
+             <div>
+                <label for="price-toggle" class="text-xs font-medium text-gray-600">價格計算基準</label>
+                <div class="mt-1.5">
+                    <label class="toggle-switch" style="width: 120px; height: 30px;">
+                        <input type="checkbox" id="price-toggle" checked>
+                        <span class="slider" style="border-radius: 30px;">
+                            <span class="slider-text on" style="font-size: 10px; left: 10px;">還原權值</span>
+                            <span class="slider-text off" style="font-size: 10px; right: 10px;">收盤價</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
             <div class="p-4 bg-indigo-50 text-indigo-800 rounded-lg text-sm">
                 <i data-lucide="info" class="inline-block w-4 h-4 mr-1.5 align-text-bottom"></i>
                 <span id="sidebar-info-text">正在從 GitHub 載入資料...</span>
@@ -150,7 +216,7 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 p-6 lg:p-8 overflow-y-auto bg-gray-50">
+    <main class="flex-1 p-6 lg:p-8 overflow-y-auto bg-gray-50 relative">
         <!-- Dashboard Page -->
         <div id="dashboard" class="page-content">
             <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
@@ -276,6 +342,17 @@
                 <div id="table-container-revenue" class="overflow-auto" style="max-height: 75vh;"></div>
             </div>
         </div>
+        
+        <!-- Financials Page -->
+        <div id="financials" class="page-content">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">財務報表</h1>
+                <div id="table-controls-financials" class="flex items-center gap-2"></div>
+            </div>
+             <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div id="table-container-financials" class="overflow-auto" style="max-height: 75vh;"></div>
+            </div>
+        </div>
 
         <!-- Individual Stock Analysis Page -->
         <div id="stock-analysis" class="page-content">
@@ -381,17 +458,14 @@
                     <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
                         <h2 class="text-xl font-semibold text-gray-900 mb-4">資料讀取設定</h2>
                         <p class="text-sm text-gray-500 mb-4">
-                            為了提升效能，預設僅載入近兩年每日行情資料。您可在此選擇不同的起始年份重新載入更完整的歷史資料。營收資料固定從 2020 年開始載入。
-                            <br><br>
-                            <b>效能建議：</b>資料量是影響載入速度的主因。若非必要，建議選擇較近的起始年份（如 2024 年）以獲得最佳體驗。載入 2020 年至今的完整每日行情可能需要數分鐘時間。
+                            <b>每日行情資料：</b>將從前一日曆年開始載入所有資料。
+                            <br>
+                            <b>每月營收資料：</b>將載入單一 `revenue.json` 檔案。
+                            <br>
+                            <b>財務報表資料：</b>將從前一日曆年的第一季開始載入。
                         </p>
-                        <div class="flex items-center gap-4">
-                            <div>
-                                <label for="reload-start-year" class="font-medium text-sm">選擇每日行情起始年份:</label>
-                                <select id="reload-start-year" class="mt-1 filter-select text-sm p-2 border rounded-md"></select>
-                            </div>
-                            <button id="reload-data-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm self-end">重新載入</button>
-                        </div>
+                         <p class="text-xs text-gray-400 mt-2">點擊「重新整理資料」將會依上述規則從 GitHub 重新抓取所有資料。</p>
+                         <button id="reload-data-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm self-end">重新整理資料</button>
                     </div>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-sm space-y-6">
@@ -415,8 +489,8 @@
             basic: [], 
             daily: [], 
             revenue: [],
+            financials: [],
             dailyBySymbol: new Map(),
-            instBySymbol: new Map(),
             revenueBySymbol: new Map(),
             tradingDates: [],
         };
@@ -426,7 +500,10 @@
             selectedDate: null,
             selectedPeriod: '1D',
             selectedIndustry: '',
-            ranking: { sortColumn: 'totalVolume', sortDirection: 'desc' }
+            ranking: { sortColumn: 'marketCap', sortDirection: 'desc' }
+        };
+        let priceSettings = {
+            useAdjusted: true
         };
         let datePickers = {};
         
@@ -443,6 +520,7 @@
         const modalTitle = document.getElementById('modal-title');
         const modalContent = document.getElementById('modal-content');
         const modalCloseBtn = document.getElementById('modal-close-btn');
+        const priceToggle = document.getElementById('price-toggle');
 
         // --- 初始化流程 ---
         async function initializeApp() {
@@ -454,23 +532,22 @@
             displayRepoSettings();
             setupDataReloadControls();
             
-            const defaultStartYear = 2024;
-            await reloadData(defaultStartYear, true); 
+            await reloadData(true); 
             
             hideLoading();
         }
 
         initializeApp();
         
-        async function reloadData(startYear, isInitialLoad = false) {
-            showLoading(`正在從 ${startYear} 年開始載入資料...`);
+        async function reloadData(isInitialLoad = false) {
+            showLoading(`正在根據新規則載入最新資料...`);
             
             Object.keys(stockData).forEach(key => {
                 if(Array.isArray(stockData[key])) stockData[key] = [];
                 else if(stockData[key] instanceof Map) stockData[key].clear();
             });
 
-            await loadAllData(startYear);
+            await loadAllData();
             
             showLoading('正在處理資料...');
             preprocessData();
@@ -491,7 +568,7 @@
             hideLoading();
             
             if (!isInitialLoad) {
-                showModal('成功', `<p>已成功載入從 ${startYear} 年至今的每日行情，以及從 2020 年至今的營收資料！</p>`);
+                showModal('成功', `<p>已成功根據新規則載入所有資料！</p>`);
             }
         }
 
@@ -503,7 +580,11 @@
             return num;
         }
         
-        async function loadAllData(startYear) {
+        function getQuarterFromMonth(month) { // month is 1-12
+            return `Q${Math.floor((month - 1) / 3) + 1}`;
+        }
+
+        async function loadAllData() {
             sidebarInfoText.textContent = '準備從 GitHub 載入資料...';
             if (!githubSettings.user || !githubSettings.repo) {
                 sidebarInfoText.textContent = '尚未設定 GitHub 儲存庫。';
@@ -513,41 +594,59 @@
 
             try {
                 const dataUrlPrefix = `https://raw.githubusercontent.com/${githubSettings.user}/${githubSettings.repo}/main/data`;
-                const apiRepoUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/contents/data`;
-
-                const basicResponse = await fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`);
-                if (basicResponse.ok) {
-                    const sanitizedText = (await basicResponse.text()).replace(/\bNaN\b/g, 'null');
-                    stockData.basic = JSON.parse(sanitizedText);
-                } else {
-                    console.warn('無法載入 basic.json');
-                }
-                
                 const allPromises = [];
+
+                // 1. 載入基本資料
+                const basicPromise = fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`)
+                    .then(res => res.ok ? res.json() : Promise.reject('basic.json failed'))
+                    .then(data => ({ type: 'basic', data }));
+                allPromises.push(basicPromise);
                 
-                const apiResponse = await fetch(apiRepoUrl);
-                if (!apiResponse.ok) throw new Error(`無法讀取 GitHub repo 根目錄: ${apiResponse.status}`);
-                const yearFolders = await apiResponse.json();
+                // 2. 載入營收資料 (單一檔案)
+                const revenuePromise = fetch(`${dataUrlPrefix}/revenue.json?v=${new Date().getTime()}`)
+                    .then(res => res.ok ? res.json() : Promise.resolve(null)) // 允許失敗
+                    .then(data => ({ type: 'revenue', data }));
+                allPromises.push(revenuePromise);
+                
+                // 3. 載入每日行情與財務報表 (遍歷目錄)
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const dailyStartYear = currentYear - 1;
+                const financialStartYear = currentYear - 1;
+
+                const apiRepoUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/contents/data`;
+                const yearFoldersResponse = await fetch(apiRepoUrl);
+                if (!yearFoldersResponse.ok) throw new Error(`無法讀取 GitHub repo 根目錄: ${yearFoldersResponse.status}`);
+                const yearFolders = await yearFoldersResponse.json();
 
                 for (const yearItem of yearFolders) {
                     if (yearItem.type !== 'dir' || !/^\d{4}$/.test(yearItem.name)) continue;
                     const year = parseInt(yearItem.name, 10);
 
-                    const monthContentsResponse = await fetch(yearItem.url);
-                    if (!monthContentsResponse.ok) continue;
-                    const monthFolders = await monthContentsResponse.json();
+                    if (year < dailyStartYear && year < financialStartYear) continue;
 
-                    for (const monthItem of monthFolders) {
-                        if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
-                            const month = monthItem.name;
-                            
-                            if (year >= 2020) {
-                                const revenueUrl = `${dataUrlPrefix}/${year}/${month}/revenue.json?v=${new Date().getTime()}`;
-                                allPromises.push(fetch(revenueUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'revenue', data})));
-                            }
-                            
-                            if (year >= startYear) {
-                                const dailyUrl = `${dataUrlPrefix}/${year}/${month}/daily.json?v=${new Date().getTime()}`;
+                    const quarterFoldersResponse = await fetch(yearItem.url);
+                    if (!quarterFoldersResponse.ok) continue;
+                    const quarterFolders = await quarterFoldersResponse.json();
+                    
+                    for (const quarterItem of quarterFolders) {
+                        // [修正] 正規表示式，符合 "1Q", "2Q" 等格式
+                        if (quarterItem.type !== 'dir' || !/^\dQ$/.test(quarterItem.name)) continue;
+                        const quarter = quarterItem.name;
+
+                        if (year >= financialStartYear) {
+                            const financialsUrl = `${dataUrlPrefix}/${year}/${quarter}/financials.json?v=${new Date().getTime()}`;
+                            allPromises.push(fetch(financialsUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'financials', data})));
+                        }
+
+                        const monthFoldersResponse = await fetch(quarterItem.url);
+                        if (!monthFoldersResponse.ok) continue;
+                        const monthFolders = await monthFoldersResponse.json();
+
+                        for (const monthItem of monthFolders) {
+                             if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
+                                const month = monthItem.name;
+                                const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
                                 allPromises.push(fetch(dailyUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'daily', data})));
                             }
                         }
@@ -570,14 +669,20 @@
 
                 stockData.daily = [];
                 stockData.revenue = [];
+                stockData.financials = [];
+                stockData.basic = [];
 
                 results.forEach(result => {
-                    if (result && result.data && Array.isArray(result.data)) {
-                        stockData[result.type].push(...result.data);
+                    if (result && result.data) {
+                        if (Array.isArray(result.data)) {
+                            stockData[result.type].push(...result.data);
+                        } else {
+                            stockData[result.type] = result.data;
+                        }
                     }
                 });
                 
-                const totalRecords = stockData.daily.length + stockData.revenue.length + stockData.basic.length;
+                const totalRecords = stockData.daily.length + stockData.revenue.length + stockData.basic.length + stockData.financials.length;
                 sidebarInfoText.textContent = totalRecords > 0 ? `已從 GitHub 載入資料。` : '未找到初始資料。';
 
             } catch (error) {
@@ -588,10 +693,9 @@
         }
 
         function preprocessData() {
-            stockData.tradingDates = [...new Set(stockData.daily.map(d => d['日期']))].sort((a,b) => toDate(b) - toDate(a));
+            stockData.tradingDates = [...new Set(stockData.daily.map(d => d['資料日期']))].sort((a,b) => toDate(b) - toDate(a));
 
             stockData.dailyBySymbol.clear();
-            stockData.instBySymbol.clear();
             stockData.revenueBySymbol.clear();
             
             stockData.daily.forEach(d => {
@@ -602,35 +706,28 @@
                     stockData.dailyBySymbol.set(symbol, []);
                 }
                 const dailyEntry = {
-                    date: toDate(d['日期']),
+                    date: toDate(d['資料日期']),
                     open: parseFloatSafe(d['開盤價']),
                     high: parseFloatSafe(d['最高價']),
                     low: parseFloatSafe(d['最低價']),
                     close: parseFloatSafe(d['收盤價']),
+                    adjClose: parseFloatSafe(d['調整收盤價']),
                     change: parseFloatSafe(d['漲跌價差']) || 0,
                     volume: parseFloatSafe(d['成交金額']),
-                    shares: parseFloatSafe(d['成交股數'])
+                    shares: parseFloatSafe(d['成交股數']),
+                    sharesOutstanding: parseFloatSafe(d['發行股數']),
+                    foreignNetBuy: parseFloatSafe(d['外資買賣超股數']),
+                    itNetBuy: parseFloatSafe(d['投信買賣超股數']),
+                    dealerNetBuy: parseFloatSafe(d['自營商買賣超股數']),
+                    foreignOwnership: parseFloatSafe(d['外資持股比率']),
                 };
                 if(dailyEntry.date && !isNaN(dailyEntry.close)) {
                     stockData.dailyBySymbol.get(symbol).push(dailyEntry);
                 }
-
-                if (!stockData.instBySymbol.has(symbol)) {
-                    stockData.instBySymbol.set(symbol, []);
-                }
-                const instEntry = {
-                    date: toDate(d['日期']),
-                    foreign: parseFloatSafe(d['外資買賣超股數']),
-                    it: parseFloatSafe(d['投信買賣超股數']),
-                    dealer: parseFloatSafe(d['自營商買賣超股數']),
-                };
-                 if(instEntry.date && (!isNaN(instEntry.foreign) || !isNaN(instEntry.it) || !isNaN(instEntry.dealer))) {
-                    stockData.instBySymbol.get(symbol).push(instEntry);
-                }
             });
 
             stockData.revenue.forEach(r => {
-                const symbol = r['公司代號'];
+                const symbol = r['證券代號'];
                 if (!symbol) return;
                 if (!stockData.revenueBySymbol.has(symbol)) {
                     stockData.revenueBySymbol.set(symbol, []);
@@ -647,15 +744,19 @@
             for (const history of stockData.dailyBySymbol.values()) {
                 history.sort((a,b) => a.date - b.date);
             }
-            for (const history of stockData.instBySymbol.values()) {
-                history.sort((a,b) => a.date - b.date);
-            }
             for (const history of stockData.revenueBySymbol.values()) {
                 history.sort((a,b) => a.date - b.date);
             }
         }
+        
+        function getActivePrice(dailyRecord) {
+            if (!dailyRecord) return NaN;
+            if (priceSettings.useAdjusted && dailyRecord.adjClose !== null && !isNaN(dailyRecord.adjClose)) {
+                return dailyRecord.adjClose;
+            }
+            return dailyRecord.close;
+        }
 
-        // --- Helper Functions ---
         function formatNumber(num, decimals = 2) {
             const numValue = (typeof num === 'number' && !isNaN(num)) ? num : parseFloatSafe(num);
             if (isNaN(numValue)) return '--';
@@ -704,7 +805,6 @@
             return dateObj ? toDisplayDate(dateObj) : dateStr;
         };
 
-        // --- Modal Control ---
         function setupModal() {
             modalCloseBtn.addEventListener('click', hideModal);
             modalOverlay.addEventListener('click', (e) => {
@@ -721,7 +821,6 @@
             modalOverlay.style.display = 'none';
         }
 
-        // --- UI 控制函式 ---
         function showLoading(text = '資料載入中...') {
             loadingText.textContent = text;
             loadingOverlay.style.display = 'flex';
@@ -740,21 +839,19 @@
             const container = document.getElementById('download-buttons-container');
             if (!container) return;
             container.innerHTML = '';
-            ['basic', 'daily', 'revenue'].forEach(key => {
+            ['basic', 'daily', 'revenue', 'financials'].forEach(key => {
                 const data = stockData[key];
                 const count = data.length;
                 let lastDate = 'N/A';
                 if (count > 0 && data[0]) {
-                    const dateKey = Object.keys(data[0]).find(k => ['日期', '資料年月', '上市日'].includes(k));
+                    const dateKey = Object.keys(data[0]).find(k => ['資料日期', '資料年月', '上市日', 'year'].includes(k));
                     if (dateKey) {
-                        const sortedData = [...data].sort((a,b) => {
-                            const dateA = toDate(a[dateKey]);
-                            const dateB = toDate(b[dateKey]);
-                            if (!dateA) return 1;
-                            if (!dateB) return -1;
-                            return dateB - dateA;
-                        });
-                        if(sortedData.length > 0) lastDate = formatDateForDisplay(sortedData[0][dateKey]);
+                         let dateValue = data[0][dateKey];
+                         if (dateKey === 'year') {
+                            lastDate = `${data[0]['year']}-Q${data[0]['quarter']}`;
+                         } else {
+                            lastDate = formatDateForDisplay(dateValue);
+                         }
                     }
                 }
                 
@@ -763,7 +860,7 @@
                 div.innerHTML = `
                     <div>
                         <p class="font-medium text-gray-800">${getReportName(key)}</p>
-                        <p class="text-sm text-gray-500">筆數: ${formatNumber(count, 0)} | 最新日期: ${lastDate}</p>
+                        <p class="text-sm text-gray-500">筆數: ${formatNumber(count, 0)} | 最新資料: ${lastDate}</p>
                     </div>
                     <button data-key="${key}" class="download-btn bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-100 text-sm flex items-center gap-1.5" ${count === 0 ? 'disabled' : ''}>
                         <i data-lucide="download" class="w-4 h-4"></i>JSON
@@ -798,13 +895,13 @@
             renderStockListPage();
             renderDailyClosePage();
             renderRevenuePage();
+            renderFinancialsPage();
             populateIndustryDropdowns();
             document.getElementById('analysis-results').classList.add('hidden');
             document.getElementById('stock-symbol').value = '';
             document.getElementById('stock-name-display').textContent = '';
         }
         
-        // --- Dashboard ---
         function initializeDashboardControls() {
             const industryFilter = document.getElementById('dashboard-industry-filter');
             const industries = [...new Set(stockData.basic.map(s => s['產業別']))].filter(Boolean).sort();
@@ -938,46 +1035,53 @@
                 const endData = periodDaily[periodDaily.length - 1];
                 const startData = periodDaily[0];
 
-                if (!endData || !startData || isNaN(endData.close)) continue;
+                if (!endData || isNaN(endData.close)) continue;
                 
                 const basicInfo = basicMap.get(symbol);
                 if (!basicInfo || basicInfo['證券代號'] === 'Y9999') continue;
 
-                const prevClose = endData.close - endData.change;
-                const perf1D = prevClose !== 0 ? (endData.change / prevClose) * 100 : 0;
+                const endPrice = getActivePrice(endData);
+                
+                // [修正] 1D 漲跌幅計算邏輯
+                const endIndex = dailyHistory.findIndex(h => h.date.getTime() === endData.date.getTime());
+                const prevPriceRecord = endIndex > 0 ? dailyHistory[endIndex - 1] : null;
+                const prevPrice = prevPriceRecord ? getActivePrice(prevPriceRecord) : NaN;
+                
+                const perf1D = !isNaN(prevPrice) && prevPrice !== 0 ? ((endPrice / prevPrice) - 1) * 100 : 0;
                 
                 let perfPeriod;
                 if (period === '1D') {
                     perfPeriod = perf1D;
                 } else {
-                    const firstCloseInPeriod = startData.close;
-                    if (isNaN(firstCloseInPeriod) || firstCloseInPeriod === 0) {
-                        perfPeriod = 0;
-                    } else {
-                        perfPeriod = ((endData.close - firstCloseInPeriod) / firstCloseInPeriod) * 100;
-                    }
+                    const firstPriceInPeriod = getActivePrice(startData);
+                    perfPeriod = !isNaN(firstPriceInPeriod) && firstPriceInPeriod !== 0 ? ((endPrice - firstPriceInPeriod) / firstPriceInPeriod) * 100 : 0;
                 }
 
                 const totalVolume = periodDaily.reduce((sum, day) => sum + (day.volume || 0), 0);
                 
                 let foreignValue = 0, itValue = 0, dealerValue = 0;
-                let foreignShares = 0, itShares = 0;
-                const instHistory = stockData.instBySymbol.get(symbol);
-                if (instHistory) {
-                    const periodInst = instHistory.filter(i => i.date >= startDate && i.date <= tempEndDate);
-                    periodInst.forEach(instDay => {
-                        const dailyDataForDay = periodDaily.find(d => d.date.getTime() === instDay.date.getTime());
-                        if (dailyDataForDay && !isNaN(dailyDataForDay.close)) {
-                            const price = dailyDataForDay.close;
-                            foreignValue += (instDay.foreign || 0) * price;
-                            itValue += (instDay.it || 0) * price;
-                            dealerValue += (instDay.dealer || 0) * price;
-                            foreignShares += (instDay.foreign || 0);
-                            itShares += (instDay.it || 0);
-                        }
-                    });
-                }
+                periodDaily.forEach(day => {
+                    if (!isNaN(day.close)) {
+                        foreignValue += (day.foreignNetBuy || 0) * day.close;
+                        itValue += (day.itNetBuy || 0) * day.close;
+                        dealerValue += (day.dealerNetBuy || 0) * day.close;
+                    }
+                });
                 
+                // [修正] 市值計算增加備援機制
+                let sharesOutstandingToUse = endData.sharesOutstanding;
+                if (!sharesOutstandingToUse || isNaN(sharesOutstandingToUse)) {
+                    for (let i = endIndex - 1; i >= 0; i--) {
+                        const historicalShares = dailyHistory[i].sharesOutstanding;
+                        if (historicalShares && !isNaN(historicalShares)) {
+                            sharesOutstandingToUse = historicalShares;
+                            break;
+                        }
+                    }
+                }
+                const marketCap = (sharesOutstandingToUse || 0) * endData.close;
+
+
                 results.push({
                     symbol,
                     name: basicInfo['證券名稱'] || '',
@@ -986,8 +1090,8 @@
                     change: endData.change,
                     perf: perfPeriod,
                     totalVolume,
-                    foreignValue, itValue, dealerValue,
-                    foreignShares, itShares
+                    marketCap,
+                    foreignValue, itValue, dealerValue
                 });
             }
             return results;
@@ -1060,9 +1164,9 @@
         }
 
 
-        function calculateMA(closingPrices, period) {
-            if (!period || period <= 0 || closingPrices.length < period) return NaN;
-            const sum = closingPrices.slice(-period).reduce((a, b) => a + b, 0);
+        function calculateMA(prices, period) {
+            if (!period || period <= 0 || prices.length < period) return NaN;
+            const sum = prices.slice(-period).reduce((a, b) => a + b, 0);
             return sum / period;
         };
 
@@ -1077,19 +1181,20 @@
                 const relevantHistory = history.filter(h => h.date <= endDate);
                 if (relevantHistory.length === 0) continue;
                 
-                const lastClose = relevantHistory[relevantHistory.length - 1].close;
-                if (isNaN(lastClose)) continue;
+                const lastRecord = relevantHistory[relevantHistory.length - 1];
+                const lastPrice = getActivePrice(lastRecord);
+                if (isNaN(lastPrice)) continue;
 
                 totalStocks++;
-                const closingPrices = relevantHistory.map(h => h.close);
+                const prices = relevantHistory.map(h => getActivePrice(h));
 
-                const ma20 = calculateMA(closingPrices, 20);
-                const ma50 = calculateMA(closingPrices, 50);
-                const ma200 = calculateMA(closingPrices, 200);
+                const ma20 = calculateMA(prices, 20);
+                const ma50 = calculateMA(prices, 50);
+                const ma200 = calculateMA(prices, 200);
 
-                if (!isNaN(ma20) && lastClose > ma20) above20++;
-                if (!isNaN(ma50) && lastClose > ma50) above50++;
-                if (!isNaN(ma200) && lastClose > ma200) above200++;
+                if (!isNaN(ma20) && lastPrice > ma20) above20++;
+                if (!isNaN(ma50) && lastPrice > ma50) above50++;
+                if (!isNaN(ma200) && lastPrice > ma200) above200++;
             }
             
             return {
@@ -1109,17 +1214,20 @@
                 const history = stockData.dailyBySymbol.get(symbol);
                 if (!history || history.length === 0) continue;
                 
-                const endData = history.find(h => h.date.getTime() === endDate.getTime());
-                if (!endData || isNaN(endData.close)) continue;
+                const endRecord = history.find(h => h.date.getTime() === endDate.getTime());
+                if (!endRecord) continue;
+                
+                const endPrice = getActivePrice(endRecord);
+                if (isNaN(endPrice)) continue;
 
                 const yearHistory = history.filter(h => h.date >= oneYearAgo && h.date <= endDate);
                 if (yearHistory.length === 0) continue;
 
-                const yearHigh = Math.max(...yearHistory.map(h => h.high).filter(h => !isNaN(h)));
-                const yearLow = Math.min(...yearHistory.map(h => h.low).filter(l => !isNaN(l)));
+                const yearHigh = Math.max(...yearHistory.map(h => getActivePrice(h)).filter(p => !isNaN(p)));
+                const yearLow = Math.min(...yearHistory.map(h => getActivePrice(h)).filter(p => !isNaN(p)));
 
-                if (endData.close >= yearHigh) highCount++;
-                if (endData.close <= yearLow) lowCount++;
+                if (endPrice >= yearHigh) highCount++;
+                if (endPrice <= yearLow) lowCount++;
             }
             return { high: highCount, low: lowCount };
         }
@@ -1349,6 +1457,7 @@
                 { key: 'close', label: '收盤價', align: 'text-right' },
                 { key: 'perf', label: '漲跌幅(%)', align: 'text-right' },
                 { key: 'totalVolume', label: '成交額(億)', align: 'text-right' },
+                { key: 'marketCap', label: '市值(億)', align: 'text-right' },
                 { key: 'foreignValue', label: '外資(億)', align: 'text-right' },
                 { key: 'itValue', label: '投信(億)', align: 'text-right' }
             ];
@@ -1386,6 +1495,7 @@
                                 <td class="py-2 text-right"><span class="${numColor(s.change)}">${formatNumber(s.close, 2)}</span></td>
                                 <td class="py-2 text-right"><span class="${numColor(s.perf)}">${s.perf.toFixed(2)}%</span></td>
                                 <td class="py-2 text-right">${formatNumber(s.totalVolume / 100000000, 2)}</td>
+                                <td class="py-2 text-right">${formatNumber(s.marketCap / 100000000, 0)}</td>
                                 <td class="py-2 text-right"><span class="${numColor(s.foreignValue)}">${formatNumber(s.foreignValue / 100000000, 2)}</span></td>
                                 <td class="py-2 text-right"><span class="${numColor(s.itValue)}">${formatNumber(s.itValue / 100000000, 2)}</span></td>
                             </tr>
@@ -1416,8 +1526,8 @@
             let chartTitle = '整體市場';
 
             if (industry) {
-                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號']));
-                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']));
+                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']));
+                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['證券代號']));
                 chartTitle = industry;
             }
 
@@ -1447,34 +1557,32 @@
         
         function renderMarketInstChart() {
             const industry = dashboardState.selectedIndustry;
-            let relevantData = stockData.daily;
-            
-            if (industry) {
-                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']));
-                relevantData = stockData.daily.filter(i => symbolsInIndustry.has(i['證券代號']));
-            }
+            let relevantSymbols = industry 
+                ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']))
+                : new Set(Array.from(stockData.dailyBySymbol.keys()));
             
             const endIdx = stockData.tradingDates.findIndex(dStr => toDate(dStr).getTime() === dashboardState.selectedDate.getTime());
             const validEndIdx = endIdx === -1 ? 0 : endIdx;
             const startIdx = Math.min(stockData.tradingDates.length - 1, validEndIdx + 9);
             const dateRange = stockData.tradingDates.slice(validEndIdx, startIdx + 1);
 
-            const dateSet = new Set(dateRange);
-            relevantData = relevantData.filter(i => dateSet.has(i['日期']));
-
             const dailyInstValue = {};
-            relevantData.forEach(d => {
-                const date = d['日期'];
-                const price = parseFloatSafe(d['收盤價']);
+            dateRange.forEach(d => dailyInstValue[d] = { foreign: 0, it: 0, dealer: 0 });
 
-                if (price) {
-                    if (!dailyInstValue[date]) dailyInstValue[date] = { foreign: 0, it: 0, dealer: 0 };
-                    const f = (parseFloatSafe(d['外資買賣超股數']) || 0) * price / 100000000;
-                    const it = (parseFloatSafe(d['投信買賣超股數']) || 0) * price / 100000000;
-                    const dl = (parseFloatSafe(d['自營商買賣超股數']) || 0) * price / 100000000;
-                    if(!isNaN(f)) dailyInstValue[date].foreign += f;
-                    if(!isNaN(it)) dailyInstValue[date].it += it;
-                    if(!isNaN(dl)) dailyInstValue[date].dealer += dl;
+            relevantSymbols.forEach(symbol => {
+                const history = stockData.dailyBySymbol.get(symbol);
+                if (history) {
+                    history.forEach(d => {
+                        const dateStr = toDisplayDate(d.date);
+                        if (dailyInstValue[dateStr]) {
+                            const price = d.close;
+                            if (price) {
+                                dailyInstValue[dateStr].foreign += (d.foreignNetBuy || 0) * price / 100000000;
+                                dailyInstValue[dateStr].it += (d.itNetBuy || 0) * price / 100000000;
+                                dailyInstValue[dateStr].dealer += (d.dealerNetBuy || 0) * price / 100000000;
+                            }
+                        }
+                    });
                 }
             });
 
@@ -1552,8 +1660,8 @@
             const industry = dashboardState.selectedIndustry;
             let revenueData = stockData.revenue;
             if (industry) {
-                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['公司代號'] || s['證券代號']));
-                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['公司代號']));
+                const symbolsInIndustry = new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']));
+                revenueData = stockData.revenue.filter(r => symbolsInIndustry.has(r['證券代號']));
             }
 
             if (revenueData.length === 0) {
@@ -1592,14 +1700,6 @@
             });
             const chart = charts['market-revenue-seasonality-chart'];
             if(chart) {
-                // De-collision logic for datalabels
-                const lastPoints = datasets.map(ds => {
-                    const lastValue = ds.data.slice().reverse().find(d => d !== null);
-                    return { label: ds.label, value: lastValue };
-                }).filter(p => p.value !== undefined).sort((a, b) => b.value - a.value);
-
-                const minSeparation = 12; // Minimum pixel separation
-
                 chart.options.plugins.datalabels.formatter = (value, context) => {
                     const dataset = context.dataset.data;
                     const nonNullData = dataset.filter(v => v !== null);
@@ -1608,17 +1708,6 @@
                     }
                     return '';
                 };
-                
-                chart.options.plugins.datalabels.align = (context) => {
-                    const dataset = context.dataset.data;
-                    const nonNullData = dataset.filter(v => v !== null);
-                     if (nonNullData.length > 0 && context.dataset.data[context.dataIndex] === nonNullData[nonNullData.length - 1]) {
-                        return 'right';
-                    }
-                    return 'center';
-                };
-                
-                chart.options.plugins.datalabels.offset = 8;
                 chart.update();
             }
         }
@@ -1664,7 +1753,7 @@
                 if (state.sortColumn) {
                     processedData.sort((a, b) => {
                         const valA = a[state.sortColumn], valB = b[state.sortColumn];
-                        if (['日期', '資料年月', '上市日'].includes(state.sortColumn)) {
+                        if (['資料日期', '資料年月', '上市日'].includes(state.sortColumn)) {
                             const dateA = toDate(valA), dateB = toDate(valB);
                             if (dateA && dateB) return state.sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
                         }
@@ -1719,9 +1808,17 @@
                 let bodyHTML = paginatedData.map(row => 
                     `<tr>${headers.map(h => {
                         let cellValue = row[h] ?? '';
-                        if (['日期', '上市日', '資料年月'].includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${formatDateForDisplay(cellValue)}</td>`;
-                        if (h === '漲跌價差') return `<td class="px-4 py-4 whitespace-nowrap text-sm ${parseFloatSafe(cellValue) > 0 ? 'text-red-600' : (parseFloatSafe(cellValue) < 0 ? 'text-green-600' : 'text-gray-700')}">${cellValue}</td>`;
-                        if (numericHeaders.includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right">${formatNumber(cellValue, h.includes('股數') ? 0 : 2)}</td>`;
+                        if (['資料日期', '上市日', '資料年月'].includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${formatDateForDisplay(cellValue)}</td>`;
+                        
+                        if (h === '漲跌價差') {
+                            const numValue = parseFloatSafe(cellValue);
+                            const displayValue = !isNaN(numValue) ? cellValue : '0.00';
+                            const colorClass = numValue > 0 ? 'text-red-600' : (numValue < 0 ? 'text-green-600' : 'text-gray-700');
+                            return `<td class="px-4 py-4 whitespace-nowrap text-sm text-right ${colorClass}">${displayValue}</td>`;
+                        }
+                        
+                        if (numericHeaders.includes(h)) return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-right">${formatNumber(cellValue, (h.includes('股數') || h.includes('金額')) ? 0 : 2)}</td>`;
+                        
                         return `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellValue}</td>`;
                     }).join('')}</tr>`
                 ).join('');
@@ -1816,10 +1913,21 @@
         }
 
         function renderStockListPage() { renderInteractiveTable('table-container-stock-list', stockData.basic, ['證券代號', '證券名稱', '產業別', '上市日'], ['產業別']); }
-        function renderDailyClosePage() { renderInteractiveTable('table-container-daily', stockData.daily, ['日期', '證券代號', '證券名稱', '開盤價', '最高價', '最低價', '收盤價', '漲跌價差', '成交股數', '成交金額', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數'], [], {}, ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交金額', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '三大法人買賣超股數']); }
-        function renderRevenuePage() { renderInteractiveTable('table-container-revenue', stockData.revenue, ['資料年月', '公司代號', '公司名稱', '當月營收', '備註'], [], {}, ['當月營收']); }
+        function renderDailyClosePage() { 
+            const headers = ['資料日期', '證券代號', '證券名稱', '開盤價', '最高價', '最低價', '收盤價', '調整收盤價', '漲跌價差', '成交股數', '成交金額', '發行股數', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '外資持股比率'];
+            const numericHeaders = ['開盤價', '最高價', '最低價', '收盤價', '調整收盤價', '成交股數', '成交金額', '發行股數', '外資買賣超股數', '投信買賣超股數', '自營商買賣超股數', '外資持股比率'];
+            renderInteractiveTable('table-container-daily', stockData.daily, headers, [], {}, numericHeaders); 
+        }
+        function renderRevenuePage() { 
+            renderInteractiveTable('table-container-revenue', stockData.revenue, ['資料年月', '證券代號', '證券名稱', '當月營收', '備註'], [], {}, ['當月營收']); 
+        }
+        function renderFinancialsPage() {
+            const headers = ['ticker', 'year', 'quarter', 'type', 'order', 'code', 'field', 'level', 'value'];
+            const categoricalHeaders = ['ticker', 'type', 'field'];
+            const numericHeaders = ['value'];
+            renderInteractiveTable('table-container-financials', stockData.financials, headers, categoricalHeaders, {}, numericHeaders);
+        }
 
-        // --- 個股分析與比較 ---
         async function analyzeStock(symbol) {
             if (!symbol) { 
                 showModal('提示', '<p>請輸入股票代號</p>'); 
@@ -1828,7 +1936,7 @@
             
             const stockDaily = stockData.dailyBySymbol.get(symbol);
             if (!stockDaily || stockDaily.length === 0) {
-                showModal('查無資料', `<p>在目前載入的資料範圍內，找不到 ${symbol} 的每日行情資料。</p><p class="mt-2 text-sm text-gray-500">您可以至「資料管理」頁面，選擇更早的起始年份來重新載入更完整的歷史資料。</p>`);
+                showModal('查無資料', `<p>在目前載入的資料範圍內，找不到 ${symbol} 的每日行情資料。</p><p class="mt-2 text-sm text-gray-500">您可以至「資料管理」頁面，重新載入資料。</p>`);
                 return;
             }
 
@@ -1837,7 +1945,7 @@
             document.getElementById('analysis-results').classList.remove('hidden');
             
             showLoading('正在計算個股與產業指標...');
-            await new Promise(resolve => setTimeout(resolve, 50)); // Allow UI to update
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             await renderAnalysisCards(symbol);
             renderCandlestickChart(symbol);
@@ -1862,7 +1970,6 @@
             const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
             const latestDate = dailyHistory[dailyHistory.length - 1].date;
 
-            // 個股指標
             const ytdData = calculatePeriodData('YTD', latestDate, null).find(d => d.symbol === symbol) || {};
             const mtdData = calculatePeriodData('MTD', latestDate, null).find(d => d.symbol === symbol) || {};
             
@@ -1875,7 +1982,6 @@
                 if (prevYearRevenue) yoy = ((latestRevenue / prevYearRevenue) - 1) * 100;
             }
 
-            // 產業平均指標
             const industryAverages = await calculateIndustryAverages(symbol, latestDate);
 
             const cardHTML = (title, value, unit = '', colorClass = 'text-gray-700', decimals = 2) => `
@@ -1885,7 +1991,6 @@
                 </div>`;
 
             container.innerHTML = `
-                <!-- 個股報酬 -->
                 ${cardHTML('總報酬 (MTD)', mtdData.perf, '%', numColor(mtdData.perf))}
                 ${cardHTML('總報酬 (YTD)', ytdData.perf, '%', numColor(ytdData.perf))}
                 ${cardHTML('營收 MoM', mom, '%', numColor(mom))}
@@ -1894,20 +1999,6 @@
                 ${cardHTML('投信買超 (MTD)', mtdData.itValue / 100000000, '億', numColor(mtdData.itValue), 0)}
                 ${cardHTML('外資買超 (YTD)', ytdData.foreignValue / 100000000, '億', numColor(ytdData.foreignValue), 0)}
                 ${cardHTML('投信買超 (YTD)', ytdData.itValue / 100000000, '億', numColor(ytdData.itValue), 0)}
-
-                <!-- 分隔線 -->
-                <div class="col-span-full border-t my-2"></div>
-                <h3 class="col-span-full text-md font-semibold text-gray-700 -mt-2 mb-2">同產業個股平均</h3>
-
-                <!-- 產業平均 -->
-                ${cardHTML('總報酬 (MTD)', industryAverages.avgMtdPerf, '%', numColor(industryAverages.avgMtdPerf))}
-                ${cardHTML('總報酬 (YTD)', industryAverages.avgYtdPerf, '%', numColor(industryAverages.avgYtdPerf))}
-                ${cardHTML('營收 MoM', industryAverages.avgMom, '%', numColor(industryAverages.avgMom))}
-                ${cardHTML('營收 YoY', industryAverages.avgYoy, '%', numColor(industryAverages.avgYoy))}
-                ${cardHTML('外資買超 (MTD)', industryAverages.avgMtdForeignValue / 100000000, '億', numColor(industryAverages.avgMtdForeignValue), 0)}
-                ${cardHTML('投信買超 (MTD)', industryAverages.avgMtdItValue / 100000000, '億', numColor(industryAverages.avgMtdItValue), 0)}
-                ${cardHTML('外資買超 (YTD)', industryAverages.avgYtdForeignValue / 100000000, '億', numColor(industryAverages.avgYtdForeignValue), 0)}
-                ${cardHTML('投信買超 (YTD)', industryAverages.avgYtdItValue / 100000000, '億', numColor(industryAverages.avgYtdItValue), 0)}
             `;
         }
         
@@ -1976,13 +2067,13 @@
 
             const volumeData = stockDaily.map(d => ({ x: d.date.getTime(), y: d.shares / 1000 }));
             const volumeColors = stockDaily.map((d, i) => i === 0 ? '#a0aec0' : (d.close >= stockDaily[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)'));
-            const closingPrices = stockDaily.map(d => d.close);
+            const activePrices = stockDaily.map(d => getActivePrice(d));
 
             const calculateMAData = (period) => {
                 if(!period || period <= 0) return [];
                 const ma = [];
                 for (let i = 0; i < stockDaily.length; i++) {
-                    const value = i < period - 1 ? null : closingPrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+                    const value = i < period - 1 ? null : activePrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
                     ma.push({ x: stockDaily[i].date.getTime(), y: value });
                 }
                 return ma;
@@ -1992,7 +2083,7 @@
                 const smaData = calculateMAData(period).map(d => d.y);
                 const bands = { upper: [], middle: [], lower: [] };
                 for (let i = period - 1; i < stockDaily.length; i++) {
-                    const slice = closingPrices.slice(i - period + 1, i + 1);
+                    const slice = activePrices.slice(i - period + 1, i + 1);
                     const mean = smaData[i];
                     const time = stockDaily[i].date.getTime();
                     if (mean === null) {
@@ -2032,22 +2123,22 @@
                 datasets.push({ type: 'line', label: 'BB 下軌', data: bb.lower, borderColor: 'rgba(139, 92, 246, 0.5)', borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: 'rgba(139, 92, 246, 0.1)', yAxisID: 'yPrice' });
             }
 
-            updateChart('candlestick-chart', { datasets }, null, { months: 12 });
+            updateChart('candlestick-chart', { datasets });
         }
 
         function renderIndividualInstChart(symbol) {
-            const stockInst = stockData.instBySymbol.get(symbol);
-            if(!stockInst || stockInst.length === 0) { 
+            const stockHistory = stockData.dailyBySymbol.get(symbol);
+            if(!stockHistory || stockHistory.length === 0) { 
                 updateChart('institutional-investors-chart', null, `無 ${symbol} 的三大法人資料`);
                 return;
             }
             
-            const dataMapper = (type) => stockInst.map(d => ({ x: d.date.getTime(), y: (d[type] || 0) / 1000 }));
+            const dataMapper = (type) => stockHistory.map(d => ({ x: d.date.getTime(), y: (d[type] || 0) / 1000 }));
 
             const datasets = [
-                { label: '外資(張)', data: dataMapper('foreign'), backgroundColor: '#3b82f6' },
-                { label: '投信(張)', data: dataMapper('it'), backgroundColor: '#10b981' },
-                { label: '自營商(張)', data: dataMapper('dealer'), backgroundColor: '#f97316' },
+                { label: '外資(張)', data: dataMapper('foreignNetBuy'), backgroundColor: '#3b82f6' },
+                { label: '投信(張)', data: dataMapper('itNetBuy'), backgroundColor: '#10b981' },
+                { label: '自營商(張)', data: dataMapper('dealerNetBuy'), backgroundColor: '#f97316' },
             ];
             updateChart('institutional-investors-chart', { datasets }, null, { months: 1 });
         }
@@ -2154,7 +2245,6 @@
             }
             
             const industry = stockInfo['產業別'];
-            const peerSymbols = stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']);
             
             const selectedDates = datePickers.peerComparison?.selectedDates;
             let startDate, endDate;
@@ -2177,70 +2267,27 @@
                 updateChart('comparison-chart', null, '選擇範圍內無交易資料');
                 return;
             }
-
-            // 計算個股累積報酬
-            const targetStockData = stockData.dailyBySymbol.get(symbol)
-                .filter(d => d.date >= startDate && d.date <= endDate)
-                .sort((a,b) => a.date - b.date);
-
-            let targetStockCumulativeReturn = [];
-            if (targetStockData.length > 0) {
-                const firstPrice = targetStockData[0].close;
-                if (!isNaN(firstPrice) && firstPrice > 0) {
-                    targetStockCumulativeReturn = targetStockData.map(d => ({
-                        x: d.date.getTime(),
-                        y: ((d.close - firstPrice) / firstPrice) * 100
-                    }));
-                }
-            }
-
-            // 計算產業平均累積報酬
-            const dailyIndustryReturns = new Map();
-            for (const day of tradingDaysInRange) {
-                dailyIndustryReturns.set(day.getTime(), []);
-            }
             
-            const dailyDataBySymbolByDate = new Map();
-            peerSymbols.forEach(peer => {
-                const daily = stockData.dailyBySymbol.get(peer);
-                if (daily) {
-                    const map = new Map();
-                    daily.forEach(d => map.set(d.date.getTime(), d.close));
-                    dailyDataBySymbolByDate.set(peer, map);
-                }
-            });
-
-            for (let i = 1; i < tradingDaysInRange.length; i++) {
-                const currentDay = tradingDaysInRange[i];
-                const prevDay = tradingDaysInRange[i-1];
+            const calculateCumulativeReturn = (symbolToCalc) => {
+                const history = stockData.dailyBySymbol.get(symbolToCalc);
+                if (!history) return [];
                 
-                for (const peer of peerSymbols) {
-                    const peerPrices = dailyDataBySymbolByDate.get(peer);
-                    if (peerPrices) {
-                        const currentPrice = peerPrices.get(currentDay.getTime());
-                        const prevPrice = peerPrices.get(prevDay.getTime());
-                        if (currentPrice && prevPrice && !isNaN(currentPrice) && !isNaN(prevPrice) && prevPrice > 0) {
-                            const dailyReturn = (currentPrice - prevPrice) / prevPrice;
-                            dailyIndustryReturns.get(currentDay.getTime()).push(dailyReturn);
-                        }
-                    }
-                }
-            }
+                const firstDataPoint = history.find(d => d.date >= tradingDaysInRange[0] && d.date <= tradingDaysInRange[tradingDaysInRange.length - 1]);
+                if (!firstDataPoint) return [];
+                
+                const firstPrice = getActivePrice(firstDataPoint);
+                if (isNaN(firstPrice) || firstPrice === 0) return [];
+                
+                const dataInRange = history.filter(d => d.date >= firstDataPoint.date && d.date <= tradingDaysInRange[tradingDaysInRange.length - 1]);
+                
+                return dataInRange.map(d => ({
+                    x: d.date.getTime(),
+                    y: ((getActivePrice(d) - firstPrice) / firstPrice) * 100
+                }));
+            };
 
-            let industryAvgCumulativeReturn = [];
-            let cumulativeReturn = 0;
-            industryAvgCumulativeReturn.push({ x: tradingDaysInRange[0].getTime(), y: 0 });
-
-            for (let i = 1; i < tradingDaysInRange.length; i++) {
-                const day = tradingDaysInRange[i];
-                const returns = dailyIndustryReturns.get(day.getTime());
-                if (returns.length > 0) {
-                    const avgDailyReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-                    cumulativeReturn = (1 + cumulativeReturn/100) * (1 + avgDailyReturn) * 100 - 100;
-                }
-                industryAvgCumulativeReturn.push({ x: day.getTime(), y: cumulativeReturn });
-            }
-
+            const targetStockCumulativeReturn = calculateCumulativeReturn(symbol);
+            
             const datasets = [];
             if (targetStockCumulativeReturn.length > 0) {
                  datasets.push({ 
@@ -2252,39 +2299,18 @@
                     borderWidth: 3
                 });
             }
-            if (industryAvgCumulativeReturn.length > 0) {
-                 datasets.push({ 
-                    label: `${industry} 平均`, 
-                    data: industryAvgCumulativeReturn, 
-                    borderColor: '#3b82f6', 
-                    tension: 0.1, 
-                    pointRadius: 0, 
-                    borderWidth: 2,
-                    borderDash: [5, 5]
-                });
-            }
             
             updateChart('comparison-chart', { datasets });
         }
         
         function getReportName(key) {
-            const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收' };
+            const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收', financials: '財務報表' };
             return names[key] || key;
         }
         
         function setupDataReloadControls() {
-            const select = document.getElementById('reload-start-year');
             const button = document.getElementById('reload-data-btn');
-            const currentYear = new Date().getFullYear();
-            for (let year = 2020; year <= currentYear; year++) {
-                select.innerHTML += `<option value="${year}">${year}年</option>`;
-            }
-            select.value = 2024;
-
-            button.addEventListener('click', () => {
-                const selectedYear = parseInt(select.value, 10);
-                reloadData(selectedYear);
-            });
+            button.addEventListener('click', () => reloadData());
         }
 
         function setupEventListeners() {
@@ -2330,6 +2356,15 @@
             document.addEventListener('click', (e) => {
                 if (!suggestionsContainer.contains(e.target) && e.target !== stockSymbolInput) {
                     suggestionsContainer.classList.add('hidden');
+                }
+            });
+
+            priceToggle.addEventListener('change', (e) => {
+                priceSettings.useAdjusted = e.target.checked;
+                refreshDashboard();
+                const currentSymbol = document.getElementById('stock-symbol').value.trim();
+                if (currentSymbol && document.getElementById('stock-analysis').classList.contains('active')) {
+                    analyzeStock(currentSymbol);
                 }
             });
 
@@ -2417,8 +2452,8 @@
                     options: { 
                         ...commonOptions(), 
                         scales: { 
-                            x: { ...timeScale(), stacked: true }, 
-                            y: { stacked: true, ...valueScale(), afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max)){ const range = axis.max - axis.min; if(range > 0) { axis.min -= range*0.1; axis.max += range*0.1; } } } }
+                            x: { ...timeScale(), stacked: false }, 
+                            y: { stacked: false, ...valueScale(undefined, true, '張'), afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max)){ const range = axis.max - axis.min; if(range > 0) { axis.min -= range*0.1; axis.max += range*0.1; } } } }
                         }
                     } 
                 },
