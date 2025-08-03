@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v23</title>
+    <title>台股儀表板 v25 (已修正)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -29,6 +30,11 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
         .sticky-header { position: sticky; top: 0; background-color: #f9fafb; z-index: 10; }
+        /* Sticky styles for financial table */
+        .sticky-col { position: sticky; left: 0; background-color: white; z-index: 5; }
+        .sticky-thead { position: sticky; top: 0; z-index: 10; }
+        .sticky-thead .sticky-col { z-index: 15; background-color: #f9fafb; /* Match header bg */}
+
         .sidebar-scroll::-webkit-scrollbar { width: 4px; }
         .sidebar-scroll::-webkit-scrollbar-thumb { background-color: #a0aec0; border-radius: 20px; }
         .page-content { display: none; animation: fadeIn 0.5s ease-in-out; }
@@ -77,6 +83,14 @@
             padding: 0.75rem;
             border-radius: 0.75rem;
             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+        }
+        .stat-card.clickable {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card.clickable:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
         }
         .stat-card h3 {
             font-size: 0.75rem; /* 12px */
@@ -139,17 +153,42 @@
         }
         .slider-text.on { left: 12px; }
         .slider-text.off { right: 12px; }
-        /* Screener Tabs */
+        /* Tabs */
+        .tab-btn {
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
         .tab-btn.active {
             border-color: #4f46e5;
             color: #4f46e5;
+            font-weight: 600;
         }
         .tab-panel {
             display: none;
+            animation: fadeIn 0.3s;
         }
         .tab-panel.active {
             display: block;
         }
+        .sub-tab-btn.active {
+            background-color: #4f46e5;
+            color: white;
+        }
+        .sub-tab-panel {
+            display: none;
+        }
+        .sub-tab-panel.active {
+            display: block;
+        }
+        .strategy-logic {
+            background-color: #f3f4f6;
+            border-left: 4px solid #4f46e5;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            color: #374151;
+            margin-bottom: 1rem;
+        }
+        .strategy-logic p { margin-bottom: 0.25rem; }
     </style>
 </head>
 <body class="flex h-screen text-gray-800">
@@ -178,7 +217,7 @@
     <aside class="w-64 bg-white shadow-lg flex flex-col shrink-0">
         <div class="p-6 text-2xl font-bold text-gray-900 border-b flex items-center">
             <i data-lucide="database-zap" class="inline-block mr-3 text-indigo-600"></i>
-            <span>TaviStock v23</span>
+            <span>TaviStock v25</span>
         </div>
         <nav class="flex-1 p-4 space-y-1 sidebar-scroll overflow-y-auto">
             <a href="#dashboard" class="nav-link flex items-center px-4 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">
@@ -311,7 +350,7 @@
             <div class="grid grid-cols-1 gap-6 mb-6">
                 <div class="bg-white p-6 rounded-xl shadow-sm">
                     <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
-                        <h3 class="text-lg font-semibold text-gray-800">市場廣度趨勢圖 (可拖曳)</h3>
+                        <h3 class="text-lg font-semibold text-gray-800">市場廣度趨勢圖</h3>
                         <div class="flex items-center gap-2">
                              <input type="text" id="breadth-trend-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設近10日, 可選區間">
                         </div>
@@ -383,51 +422,84 @@
             </div>
 
             <div id="analysis-results" class="hidden">
-                 <div class="bg-white p-6 rounded-xl shadow-sm mb-6">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">關鍵統計</h3>
-                    <div id="analysis-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4"></div>
-                 </div>
-                 
-                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 space-y-6">
-                        <div class="bg-white p-6 rounded-xl shadow-sm">
-                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術分析圖 (可滾輪縮放/拖曳)</h3>
-                            <div id="candlestick-chart-container" class="relative h-[450px]">
-                                <div class="chart-placeholder">請輸入股票代號並點擊分析</div>
-                                <canvas id="candlestick-chart" style="display: none;"></canvas>
+                <!-- Analysis Tabs -->
+                <div class="border-b border-gray-200 mb-6">
+                    <nav id="analysis-tabs" class="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button data-panel="analysis-summary" class="tab-btn active whitespace-nowrap py-4 px-1 text-sm">摘要</button>
+                        <button data-panel="analysis-tech" class="tab-btn whitespace-nowrap py-4 px-1 text-sm text-gray-500 hover:text-gray-700">技術分析</button>
+                        <button data-panel="analysis-chip" class="tab-btn whitespace-nowrap py-4 px-1 text-sm text-gray-500 hover:text-gray-700">籌碼分析</button>
+                        <button data-panel="analysis-revenue" class="tab-btn whitespace-nowrap py-4 px-1 text-sm text-gray-500 hover:text-gray-700">營收分析</button>
+                        <button data-panel="analysis-financial" class="tab-btn whitespace-nowrap py-4 px-1 text-sm text-gray-500 hover:text-gray-700">財務分析</button>
+                    </nav>
+                </div>
+
+                <!-- Analysis Tab Panels -->
+                <div id="analysis-summary" class="tab-panel active space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">關鍵統計</h3>
+                        <div id="analysis-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4"></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                            <h3 class="text-lg font-semibold text-gray-800">同業比較 (累積報酬率)</h3>
+                             <input type="text" id="peer-comparison-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設YTD, 可選區間">
+                        </div>
+                         <div id="comparison-chart-container" class="relative h-96"><div class="chart-placeholder">計算中...</div><canvas id="comparison-chart" style="display: none;"></canvas></div>
+                    </div>
+                </div>
+
+                <div id="analysis-tech" class="tab-panel">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 space-y-6">
+                            <div class="bg-white p-6 rounded-xl shadow-sm">
+                                <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                                    <h3 class="text-lg font-semibold text-gray-800">技術分析圖 (可滾輪縮放/拖曳)</h3>
+                                    <input type="text" id="tech-chart-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設近3月, 可選區間">
+                                </div>
+                                <div id="candlestick-chart-container" class="relative h-[450px]">
+                                    <div class="chart-placeholder">請輸入股票代號並點擊分析</div>
+                                    <canvas id="candlestick-chart" style="display: none;"></canvas>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="lg:col-span-1 space-y-6">
-                        <div class="bg-white p-6 rounded-xl shadow-sm">
-                            <h3 class="text-lg font-semibold text-gray-800 mb-4">技術指標設定</h3>
-                            <div id="indicator-controls" class="space-y-4 text-sm">
-                                <div>
-                                   <label class="flex items-center font-medium"><input type="checkbox" id="show-ma" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked> <span class="ml-2">移動平均線 (MA)</span></label>
-                                   <div class="grid grid-cols-3 gap-2 mt-2 pl-6">
-                                     <input type="number" id="ma1-period" value="5" class="param-input text-center" title="MA1 週期">
-                                     <input type="number" id="ma2-period" value="20" class="param-input text-center" title="MA2 週期">
-                                     <input type="number" id="ma3-period" value="60" class="param-input text-center" title="MA3 週期">
-                                   </div>
-                                </div>
-                                <div>
-                                   <label class="flex items-center font-medium"><input type="checkbox" id="show-bb" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">布林通道 (BB)</span></label>
-                                   <div class="grid grid-cols-2 gap-2 mt-2 pl-6">
-                                     <input type="number" id="bb-period" value="20" class="param-input text-center" title="BB 週期">
-                                     <input type="number" id="bb-stddev" value="2" step="0.1" class="param-input text-center" title="BB 標準差">
-                                   </div>
+                        <div class="lg:col-span-1 space-y-6">
+                            <div class="bg-white p-6 rounded-xl shadow-sm">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-4">技術指標設定</h3>
+                                <div id="indicator-controls" class="space-y-4 text-sm">
+                                    <div>
+                                       <label class="flex items-center font-medium"><input type="checkbox" id="show-ma" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked> <span class="ml-2">移動平均線 (MA)</span></label>
+                                       <div class="grid grid-cols-3 gap-2 mt-2 pl-6">
+                                         <input type="number" id="ma1-period" value="5" class="param-input text-center" title="MA1 週期">
+                                         <input type="number" id="ma2-period" value="20" class="param-input text-center" title="MA2 週期">
+                                         <input type="number" id="ma3-period" value="60" class="param-input text-center" title="MA3 週期">
+                                       </div>
+                                    </div>
+                                    <div>
+                                       <label class="flex items-center font-medium"><input type="checkbox" id="show-bb" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2">布林通道 (BB)</span></label>
+                                       <div class="grid grid-cols-2 gap-2 mt-2 pl-6">
+                                         <input type="number" id="bb-period" value="20" class="param-input text-center" title="BB 週期">
+                                         <input type="number" id="bb-stddev" value="2" step="0.1" class="param-input text-center" title="BB 標準差">
+                                       </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 gap-6 mt-6">
-                    <div class="bg-white p-6 rounded-xl shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-4">三大法人買賣超 (張) (預設近一個月, 可拖曳)</h3>
+                
+                <div id="analysis-chip" class="tab-panel">
+                     <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                            <h3 class="text-lg font-semibold text-gray-800">三大法人買賣超 (張)</h3>
+                            <input type="text" id="chip-chart-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設近3月, 可選區間">
+                        </div>
                         <div id="institutional-investors-chart-container" class="relative h-80"><div class="chart-placeholder">無三大法人資料</div><canvas id="institutional-investors-chart" style="display: none;"></canvas></div>
                     </div>
+                </div>
+                
+                <div id="analysis-revenue" class="tab-panel space-y-6">
                     <div class="bg-white p-6 rounded-xl shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-4">月營收趨勢 (百萬元) (可拖曳)</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">月營收趨勢 (百萬元)</h3>
                         <div id="revenue-trend-chart-container-individual" class="relative h-80"><div class="chart-placeholder">無月營收資料</div><canvas id="revenue-trend-chart-individual" style="display: none;"></canvas></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl shadow-sm">
@@ -441,12 +513,13 @@
                         </div>
                         <div id="revenue-seasonality-chart-container" class="relative h-96"><div class="chart-placeholder">無月營收資料</div><canvas id="revenue-seasonality-chart" style="display: none;"></canvas></div>
                     </div>
+                </div>
+
+                <div id="analysis-financial" class="tab-panel">
                     <div class="bg-white p-6 rounded-xl shadow-sm">
-                        <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
-                            <h3 class="text-lg font-semibold text-gray-800">同業比較 (累積報酬率) (可拖曳)</h3>
-                             <input type="text" id="peer-comparison-datepicker" class="filter-select text-sm p-1 border rounded-md" placeholder="預設YTD, 可選區間">
+                        <div id="financial-statement-container">
+                            <div class="text-center py-8 text-gray-500">請先選擇股票以載入財務報表。</div>
                         </div>
-                         <div id="comparison-chart-container" class="relative h-96"><div class="chart-placeholder">計算中...</div><canvas id="comparison-chart" style="display: none;"></canvas></div>
                     </div>
                 </div>
             </div>
@@ -463,31 +536,133 @@
                         <button data-panel="super-performance" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">超級績效</button>
                         <button data-panel="it-buy" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">投信偷買</button>
                         <button data-panel="magic-formula" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">神奇公式</button>
-                        <button data-panel="value" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">計量價值</button>
+                        <button data-panel="f-score" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">F-Score</button>
                     </nav>
                 </div>
                 <!-- Tab Panels -->
                 <div class="mt-6">
                     <div id="panel-revenue-momentum" class="tab-panel active">
-                        <div class="flex flex-wrap items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-                            <div>
-                                <label for="screener-ma-period" class="block text-sm font-medium text-gray-700">營收月均線(MA)期數:</label>
-                                <input type="number" id="screener-ma-period" value="4" class="mt-1 param-input w-24">
-                            </div>
-                            <div>
-                                <label for="screener-revenue-month" class="block text-sm font-medium text-gray-700">篩選營收月份:</label>
-                                <select id="screener-revenue-month" class="mt-1 filter-select w-40"></select>
-                            </div>
-                            <button id="run-revenue-screener" class="self-end bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">執行選股</button>
+                        <div class="strategy-logic">
+                            <p><b>邏輯：</b>篩選出營收呈現加速成長趨勢的股票。</p>
+                            <p>1. 計算最新N個月的月營收移動平均 (MA_t)。</p>
+                            <p>2. 條件：MA_t > MA_t-1 > MA_t-2 (營收均線連續兩個月走升)。</p>
+                            <p>3. 價格條件：篩選當日收盤價在月線(20MA)之上。</p>
                         </div>
-                        <div id="revenue-screener-results" class="overflow-x-auto">
-                            <div class="text-center py-8 text-gray-500">請設定參數並執行選股。</div>
+                        <div id="revenue-momentum-controls" class="flex flex-wrap items-end gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label for="rm-date" class="block text-sm font-medium text-gray-700">價格日期:</label>
+                                <input type="text" id="rm-date" class="mt-1 param-input w-32">
+                            </div>
+                            <div>
+                                <label for="rm-revenue-month" class="block text-sm font-medium text-gray-700">最新營收月份:</label>
+                                <select id="rm-revenue-month" class="mt-1 filter-select w-32"></select>
+                            </div>
+                            <div>
+                                <label for="rm-ma-period" class="block text-sm font-medium text-gray-700">營收MA期數:</label>
+                                <input type="number" id="rm-ma-period" value="3" class="mt-1 param-input w-24">
+                            </div>
+                            <div>
+                                <label for="rm-price-ma" class="block text-sm font-medium text-gray-700">價格MA期數:</label>
+                                <input type="number" id="rm-price-ma" value="20" class="mt-1 param-input w-24">
+                            </div>
+                            <div>
+                                <label for="rm-sort" class="block text-sm font-medium text-gray-700">排序方式:</label>
+                                <select id="rm-sort" class="mt-1 filter-select w-40">
+                                    <option value="price_ma_ratio">價格/MA乖離率</option>
+                                    <option value="volume">成交值</option>
+                                    <option value="revenue">最新月營收</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="revenue-momentum-results" class="overflow-x-auto">
+                            <div class="text-center py-8 text-gray-500">請設定參數，將自動進行篩選。</div>
                         </div>
                     </div>
-                    <div id="panel-super-performance" class="tab-panel"><div class="text-center py-8 text-gray-500">此策略尚未實作。</div></div>
-                    <div id="panel-it-buy" class="tab-panel"><div class="text-center py-8 text-gray-500">此策略尚未實作。</div></div>
-                    <div id="panel-magic-formula" class="tab-panel"><div class="text-center py-8 text-gray-500">此策略尚未實作。</div></div>
-                    <div id="panel-value" class="tab-panel"><div class="text-center py-8 text-gray-500">此策略尚未實作。</div></div>
+                    <div id="panel-super-performance" class="tab-panel">
+                        <div class="strategy-logic">
+                            <p><b>邏輯：</b>綜合價格強度、趨勢與波動性的強勢股策略 (改編自 Mark Minervini)。</p>
+                            <p>1. <b>趨勢過濾:</b> 收盤價 > 50/150/200日均線 (MA)。</p>
+                            <p>2. <b>趨勢方向:</b> 50MA > 150MA 且 150MA > 200MA。</p>
+                            <p>3. <b>200MA趨勢:</b> 200MA 處於上升趨勢 (高於1個月前)。</p>
+                            <p>4. <b>遠離低點:</b> 目前價格 > 1年內最低價的 1.75 倍。</p>
+                            <p>5. <b>接近高點:</b> 目前價格 > 1年內最高價的 0.85 倍 (距高點不超過15%)。</p>
+                            <p>6. <b>上漲天數:</b> 過去20天中，上漲天數超過10天。</p>
+                        </div>
+                         <div id="super-performance-controls" class="flex flex-wrap items-end gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label for="sp-date" class="block text-sm font-medium text-gray-700">篩選日期:</label>
+                                <input type="text" id="sp-date" class="mt-1 param-input w-32">
+                            </div>
+                        </div>
+                        <div id="super-performance-results" class="overflow-x-auto">
+                            <div class="text-center py-8 text-gray-500">請設定參數，將自動進行篩選。</div>
+                        </div>
+                    </div>
+                    <div id="panel-it-buy" class="tab-panel">
+                        <div class="strategy-logic">
+                            <p><b>邏輯：</b>尋找近期投信積極佈局，但股價尚未大幅上漲的潛力股。</p>
+                            <p>1. <b>投信持股變化率:</b> 計算過去 N 天內，投信買賣超總和佔發行股數的比例。</p>
+                            <p>2. <b>漲幅過濾:</b> 限制過去 N 天的股價漲幅小於 X%。</p>
+                            <p>3. <b>排序:</b> 依照投信持股變化率由高至低排序。</p>
+                        </div>
+                        <div id="it-buy-controls" class="flex flex-wrap items-end gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label for="it-date" class="block text-sm font-medium text-gray-700">篩選日期:</label>
+                                <input type="text" id="it-date" class="mt-1 param-input w-32">
+                            </div>
+                            <div>
+                                <label for="it-days" class="block text-sm font-medium text-gray-700">回溯天數 (N):</label>
+                                <input type="number" id="it-days" value="20" class="mt-1 param-input w-24">
+                            </div>
+                            <div>
+                                <label for="it-change-limit" class="block text-sm font-medium text-gray-700">最大漲幅 (%):</label>
+                                <input type="number" id="it-change-limit" value="25" class="mt-1 param-input w-24">
+                            </div>
+                        </div>
+                        <div id="it-buy-results" class="overflow-x-auto">
+                           <div class="text-center py-8 text-gray-500">請設定參數，將自動進行篩選。</div>
+                        </div>
+                    </div>
+                    <div id="panel-magic-formula" class="tab-panel">
+                        <div class="strategy-logic">
+                             <p><b>邏輯：</b>尋找「好公司」與「便宜價格」的交集 (Joel Greenblatt 神奇公式)。</p>
+                             <p>1. <b>資本回報率 (Return on Capital):</b> 稅前息前淨利(EBIT) / (淨營運資金 + 淨固定資產)。此指標衡量公司賺錢的效率。</p>
+                             <p>2. <b>盈餘殖利率 (Earnings Yield):</b> 稅前息前淨利(EBIT) / 企業價值(EV)。此指標衡量公司相對於市值的獲利能力。</p>
+                             <p>3. <b>綜合排名:</b> 分別對兩項指標進行排名，將名次相加，總名次越低者越好。</p>
+                             <p class="text-xs text-gray-500">*註: 財報資料使用最近四個季度的滾動加總 (TTM) 計算。</p>
+                        </div>
+                         <div id="magic-formula-controls" class="flex flex-wrap items-end gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label for="mf-date" class="block text-sm font-medium text-gray-700">篩選日期:</label>
+                                <input type="text" id="mf-date" class="mt-1 param-input w-32">
+                            </div>
+                        </div>
+                        <div id="magic-formula-results" class="overflow-x-auto">
+                            <div class="text-center py-8 text-gray-500">請設定參數，將自動進行篩選。</div>
+                        </div>
+                    </div>
+                    <div id="panel-f-score" class="tab-panel">
+                        <div class="strategy-logic">
+                             <p><b>邏輯：</b>使用9項財務指標檢驗公司基本面是否改善 (Piotroski F-Score)。分數越高(滿分9分)，代表財務狀況越穩健。</p>
+                             <p><b>獲利性 (4分):</b> 1.資產報酬率(ROA)>0, 2.營業現金流>0, 3.ROA年增>0, 4.營業現金流>淨利。</p>
+                             <p><b>財務槓桿/流動性 (3分):</b> 5.長期負債比年減, 6.流動比率年增, 7.未發行新股。</p>
+                             <p><b>營運效率 (2分):</b> 8.毛利率年增, 9.總資產週轉率年增。</p>
+                              <p class="text-xs text-gray-500">*註: 財報資料使用最近四個季度的滾動加總 (TTM) 與前一年同期比較。</p>
+                        </div>
+                        <div id="f-score-controls" class="flex flex-wrap items-end gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label for="fs-date" class="block text-sm font-medium text-gray-700">篩選日期:</label>
+                                <input type="text" id="fs-date" class="mt-1 param-input w-32">
+                            </div>
+                            <div>
+                                <label for="fs-min-score" class="block text-sm font-medium text-gray-700">最低 F-Score:</label>
+                                <input type="number" id="fs-min-score" value="7" min="0" max="9" class="mt-1 param-input w-24">
+                            </div>
+                        </div>
+                        <div id="f-score-results" class="overflow-x-auto">
+                            <div class="text-center py-8 text-gray-500">請設定參數，將自動進行篩選。</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -516,7 +691,7 @@
                             <br>
                             <b>每月營收資料：</b>將載入單一 `revenue.json` 檔案。
                             <br>
-                            <b>財務報表資料：</b>將從前一日曆年的第一季開始載入。
+                            <b>財務報表資料：</b>將從前兩個日曆年的第一季開始載入。
                         </p>
                          <p class="text-xs text-gray-400 mt-2">點擊「重新整理資料」將會依上述規則從 GitHub 重新抓取所有資料。</p>
                          <button id="reload-data-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 shadow-sm self-end">重新整理資料</button>
@@ -533,7 +708,8 @@
         </div>
     </main>
 
-    <script>
+
+<script>
 	// 全域註冊 Chart.js 插件
     Chart.register(ChartDataLabels, ChartZoom);
 
@@ -546,6 +722,7 @@
             financials: [],
             dailyBySymbol: new Map(),
             revenueBySymbol: new Map(),
+            financialsBySymbol: new Map(),
             tradingDates: [],
             basicInfoMap: new Map(),
         };
@@ -555,7 +732,9 @@
             selectedDate: null,
             selectedPeriod: '1D',
             selectedIndustry: '',
-            ranking: { sortColumn: 'marketCap', sortDirection: 'desc' }
+            ranking: { sortColumn: 'marketCap', sortDirection: 'desc' },
+            maStats: {},
+            highLowStats: {}
         };
         let priceSettings = {
             useAdjusted: true
@@ -665,7 +844,7 @@
                 const now = new Date();
                 const currentYear = now.getFullYear();
                 const dailyStartYear = currentYear - 1;
-                const financialStartYear = currentYear - 1;
+                const financialStartYear = currentYear - 2;
 
                 const apiRepoUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/contents/data`;
                 const yearFoldersResponse = await fetch(apiRepoUrl);
@@ -748,12 +927,31 @@
                 showModal('錯誤', `<p>資料載入過程中發生錯誤。</p><p class="mt-2 text-sm text-gray-500">錯誤訊息: ${error.message}</p>`);
             }
         }
+        
+        /**
+         * 檢查是否為要納入計算的普通股
+         * @param {string} symbol - 股票代號
+         * @returns {boolean}
+         */
+        function isNormalStock(symbol) {
+            if (typeof symbol !== 'string') return false;
+            return /^\d{4}$/.test(symbol) && !symbol.startsWith('00');
+        }
 
         function preprocessData() {
+            // 過濾掉非普通股
+            stockData.basic = stockData.basic.filter(s => isNormalStock(s['證券代號']));
+            const validSymbols = new Set(stockData.basic.map(s => s['證券代號']));
+            
+            stockData.daily = stockData.daily.filter(d => validSymbols.has(d['證券代號']));
+            stockData.revenue = stockData.revenue.filter(r => validSymbols.has(r['證券代號']));
+            stockData.financials = stockData.financials.filter(f => validSymbols.has(f['ticker']));
+
             stockData.tradingDates = [...new Set(stockData.daily.map(d => d['資料日期']))].sort((a,b) => toDate(b) - toDate(a));
 
             stockData.dailyBySymbol.clear();
             stockData.revenueBySymbol.clear();
+            stockData.financialsBySymbol.clear();
             stockData.basicInfoMap.clear();
 
             stockData.basic.forEach(b => {
@@ -762,8 +960,6 @@
             
             stockData.daily.forEach(d => {
                 const symbol = d['證券代號'];
-                if (!/^\d{4}/.test(symbol)) return;
-
                 if (!stockData.dailyBySymbol.has(symbol)) {
                     stockData.dailyBySymbol.set(symbol, []);
                 }
@@ -804,12 +1000,27 @@
                     }
                 });
             }
+            
+            stockData.financials.forEach(f => {
+                const symbol = f['ticker'];
+                if (!symbol) return;
+                if (!stockData.financialsBySymbol.has(symbol)) {
+                    stockData.financialsBySymbol.set(symbol, []);
+                }
+                stockData.financialsBySymbol.get(symbol).push(f);
+            });
 
             for (const history of stockData.dailyBySymbol.values()) {
                 history.sort((a,b) => a.date - b.date);
             }
             for (const history of stockData.revenueBySymbol.values()) {
                 history.sort((a,b) => a.date - b.date);
+            }
+            for (const history of stockData.financialsBySymbol.values()) {
+                history.sort((a,b) => {
+                    if (a.year !== b.year) return a.year - b.year;
+                    return parseInt(a.quarter.replace('Q','')) - parseInt(b.quarter.replace('Q',''));
+                });
             }
         }
         
@@ -867,6 +1078,12 @@
             }
             if (format === 'YYYY-MM') {
                 return `${year}-${month}`;
+            }
+            if (format === 'MM/DD') {
+                return `${month}/${day}`;
+            }
+            if (format === 'YYYY/MM') {
+                return `${year}/${month}`;
             }
             return `${year}/${month}/${day}`;
         };
@@ -969,7 +1186,6 @@
             renderDailyClosePage();
             renderRevenuePage();
             renderFinancialsPage();
-            populateIndustryDropdowns();
             populateScreenerControls();
             document.getElementById('analysis-results').classList.add('hidden');
             document.getElementById('stock-symbol').value = '';
@@ -1012,7 +1228,7 @@
                     dashboardState.selectedDate = toDate(stockData.tradingDates[0]);
                 }
                 datePickers.dashboard = flatpickr("#dashboard-date-picker", {
-                    enable: stockData.tradingDates.map(d => toDisplayDate(toDate(d))),
+                    enable: stockData.tradingDates.map(d => toDate(d)),
                     defaultDate: dashboardState.selectedDate,
                     dateFormat: "Y/m/d",
                     locale: "zh_tw",
@@ -1054,6 +1270,13 @@
             
             const periodData = calculatePeriodData(selectedPeriod, selectedDate, selectedIndustry);
             
+            const industry = dashboardState.selectedIndustry;
+            const symbolsForMA = industry 
+                ? stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])
+                : Array.from(stockData.dailyBySymbol.keys());
+            dashboardState.maStats = calculateMAStats(symbolsForMA, dashboardState.selectedDate);
+            dashboardState.highLowStats = calculate52WeekHighLow(dashboardState.selectedDate, symbolsForMA);
+
             renderDashboardCards(periodData);
             renderDistributionChart(periodData);
             renderSectorCharts(periodData);
@@ -1190,17 +1413,13 @@
             const totalItValue = periodData.reduce((acc, cur) => acc + (cur.itValue || 0), 0) / 100000000;
             const totalDealerValue = periodData.reduce((acc, cur) => acc + (cur.dealerValue || 0), 0) / 100000000;
             
-            const industry = dashboardState.selectedIndustry;
-            const symbolsForMA = industry 
-                ? stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號'])
-                : Array.from(stockData.dailyBySymbol.keys());
-            const maStats = calculateMAStats(symbolsForMA, dashboardState.selectedDate);
-            const highLowData = calculate52WeekHighLow(dashboardState.selectedDate, symbolsForMA);
+            const maStats = dashboardState.maStats;
+            const highLowData = dashboardState.highLowStats;
 
             const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
             
             container1.innerHTML = `
-                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-3">
+                <div class="stat-card flex flex-col justify-center lg:col-span-3">
                     <h3 class="text-sm font-medium text-gray-500">漲跌家數</h3>
                     <div class="flex items-baseline space-x-2 mt-1">
                         <p class="text-2xl font-bold text-red-600">${advances}</p>
@@ -1210,30 +1429,49 @@
                         <p class="text-2xl font-bold text-green-600">${declines}</p>
                     </div>
                 </div>
-                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-2">
+                <div class="stat-card flex flex-col justify-center lg:col-span-2">
                     <h3 class="text-sm font-medium text-gray-500">平均漲跌幅</h3>
                     <p class="text-2xl font-bold mt-1 ${numColor(avgChangePercent)}">${avgChangePercent.toFixed(2)}%</p>
                 </div>
-                <div class="bg-white p-4 rounded-xl shadow-sm flex flex-col justify-center lg:col-span-3">
+                <div class="stat-card flex flex-col justify-center lg:col-span-3">
                     <h3 class="text-sm font-medium text-gray-500">外/投/自營 (億)</h3>
-                    <div class="flex items-baseline justify-start space-x-2 mt-1 text-2xl font-bold">
-                        <span class="${numColor(totalForeignValue)}">${totalForeignValue.toFixed(1)}</span>
-                        <span class="text-gray-400 text-sm">/</span>
-                        <span class="${numColor(totalItValue)}">${totalItValue.toFixed(1)}</span>
-                        <span class="text-gray-400 text-sm">/</span>
-                        <span class="${numColor(totalDealerValue)}">${totalDealerValue.toFixed(1)}</span>
+                    <div class="flex items-baseline justify-start space-x-2 mt-1">
+                        <p class="text-2xl font-bold ${numColor(totalForeignValue)}">${totalForeignValue.toFixed(1)}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold ${numColor(totalItValue)}">${totalItValue.toFixed(1)}</p>
+                        <span class="text-gray-400">/</span>
+                        <p class="text-2xl font-bold ${numColor(totalDealerValue)}">${totalDealerValue.toFixed(1)}</p>
                     </div>
                 </div>
             `;
 
             container2.innerHTML = `
-                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 20MA</h3><p class="text-2xl font-bold mt-1">${maStats.above20} <span class="text-base font-medium text-gray-500">(${maStats.pct20}%)</span></p></div>
-                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 50MA</h3><p class="text-2xl font-bold mt-1">${maStats.above50} <span class="text-base font-medium text-gray-500">(${maStats.pct50}%)</span></p></div>
-                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">> 200MA</h3><p class="text-2xl font-bold mt-1">${maStats.above200} <span class="text-base font-medium text-gray-500">(${maStats.pct200}%)</span></p></div>
-                <div class="bg-white p-4 rounded-xl shadow-sm"><h3 class="text-sm font-medium text-gray-500">52週新高/新低</h3><p class="text-2xl font-bold mt-1"><span class="text-red-500">${highLowData.high}</span> / <span class="text-green-500">${highLowData.low}</span></p></div>
+                <div id="card-above-20ma" class="stat-card clickable"><h3 class="text-sm font-medium text-gray-500">> 20MA</h3><p class="text-2xl font-bold mt-1">${maStats.above20} <span class="text-base font-medium text-gray-500">(${maStats.pct20}%)</span></p></div>
+                <div id="card-above-50ma" class="stat-card clickable"><h3 class="text-sm font-medium text-gray-500">> 50MA</h3><p class="text-2xl font-bold mt-1">${maStats.above50} <span class="text-base font-medium text-gray-500">(${maStats.pct50}%)</span></p></div>
+                <div id="card-above-200ma" class="stat-card clickable"><h3 class="text-sm font-medium text-gray-500">> 200MA</h3><p class="text-2xl font-bold mt-1">${maStats.above200} <span class="text-base font-medium text-gray-500">(${maStats.pct200}%)</span></p></div>
+                <div id="card-52w-high-low" class="stat-card clickable"><h3 class="text-sm font-medium text-gray-500">52週新高/新低</h3><p class="text-2xl font-bold mt-1"><span class="text-red-500">${highLowData.high}</span> / <span class="text-green-500">${highLowData.low}</span></p></div>
             `;
+            
+            document.getElementById('card-above-20ma').addEventListener('click', () => showStockListModal(maStats.above20Stocks, '站上 20MA 股票'));
+            document.getElementById('card-above-50ma').addEventListener('click', () => showStockListModal(maStats.above50Stocks, '站上 50MA 股票'));
+            document.getElementById('card-above-200ma').addEventListener('click', () => showStockListModal(maStats.above200Stocks, '站上 200MA 股票'));
+            document.getElementById('card-52w-high-low').addEventListener('click', () => {
+                const modalHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><h4 class="font-bold mb-2 text-red-600">創52週新高 (${highLowData.highStocks.length})</h4>${createLeaderboardTable(highLowData.highStocks, ['代號', '名稱', '收盤價'], s => [s.symbol, s.name, formatNumber(s.close, 2)], ['text-left', 'text-left', 'text-right'])}</div>
+                    <div><h4 class="font-bold mb-2 text-green-600">創52週新低 (${highLowData.lowStocks.length})</h4>${createLeaderboardTable(highLowData.lowStocks, ['代號', '名稱', '收盤價'], s => [s.symbol, s.name, formatNumber(s.close, 2)], ['text-left', 'text-left', 'text-right'])}</div>
+                </div>`;
+                showModal('52週新高/新低股票列表', modalHtml);
+            });
         }
-
+        
+        function showStockListModal(stocks, title) {
+            const sortedStocks = stocks.sort((a,b) => b.marketCap - a.marketCap);
+            const modalHtml = createLeaderboardTable(sortedStocks, ['代號', '名稱', '收盤價', '市值(億)'],
+                (s) => [s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.marketCap / 1e8, 0)],
+                ['text-left', 'text-left', 'text-right', 'text-right']
+            );
+            showModal(`${title} (${stocks.length}檔)`, modalHtml);
+        }
 
         function calculateMA(prices, period) {
             if (!period || period <= 0 || prices.length < period) return NaN;
@@ -1243,6 +1481,7 @@
 
         function calculateMAStats(symbols, endDate) {
             let above20 = 0, above50 = 0, above200 = 0;
+            let above20Stocks = [], above50Stocks = [], above200Stocks = [];
             let totalStocks = 0;
 
             for (const symbol of symbols) {
@@ -1250,7 +1489,7 @@
                 if (!history) continue;
 
                 const relevantHistory = history.filter(h => h.date <= endDate);
-                if (relevantHistory.length === 0) continue;
+                if (relevantHistory.length < 2) continue;
                 
                 const lastRecord = relevantHistory[relevantHistory.length - 1];
                 const lastPrice = getActivePrice(lastRecord);
@@ -1258,18 +1497,36 @@
 
                 totalStocks++;
                 const prices = relevantHistory.map(h => getActivePrice(h));
+                const stockInfo = stockData.basicInfoMap.get(symbol);
+                const stockEntry = {
+                    symbol: symbol,
+                    name: stockInfo?.['證券名稱'] || '',
+                    close: lastRecord.close,
+                    marketCap: (lastRecord.sharesOutstanding || 0) * lastRecord.close
+                };
 
                 const ma20 = calculateMA(prices, 20);
+                if (!isNaN(ma20) && lastPrice > ma20) {
+                    above20++;
+                    above20Stocks.push(stockEntry);
+                }
+                
                 const ma50 = calculateMA(prices, 50);
-                const ma200 = calculateMA(prices, 200);
+                if (!isNaN(ma50) && lastPrice > ma50) {
+                    above50++;
+                    above50Stocks.push(stockEntry);
+                }
 
-                if (!isNaN(ma20) && lastPrice > ma20) above20++;
-                if (!isNaN(ma50) && lastPrice > ma50) above50++;
-                if (!isNaN(ma200) && lastPrice > ma200) above200++;
+                const ma200 = calculateMA(prices, 200);
+                if (!isNaN(ma200) && lastPrice > ma200) {
+                    above200++;
+                    above200Stocks.push(stockEntry);
+                }
             }
             
             return {
                 above20, above50, above200,
+                above20Stocks, above50Stocks, above200Stocks,
                 pct20: totalStocks > 0 ? (above20 / totalStocks * 100).toFixed(1) : 0,
                 pct50: totalStocks > 0 ? (above50 / totalStocks * 100).toFixed(1) : 0,
                 pct200: totalStocks > 0 ? (above200 / totalStocks * 100).toFixed(1) : 0,
@@ -1278,6 +1535,7 @@
         
         function calculate52WeekHighLow(endDate, symbols) {
             let highCount = 0, lowCount = 0;
+            let highStocks = [], lowStocks = [];
             const oneYearAgo = new Date(endDate);
             oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -1294,13 +1552,29 @@
                 const yearHistory = history.filter(h => h.date >= oneYearAgo && h.date <= endDate);
                 if (yearHistory.length === 0) continue;
 
-                const yearHigh = Math.max(...yearHistory.map(h => getActivePrice(h)).filter(p => !isNaN(p)));
-                const yearLow = Math.min(...yearHistory.map(h => getActivePrice(h)).filter(p => !isNaN(p)));
+                const yearPrices = yearHistory.map(h => getActivePrice(h)).filter(p => !isNaN(p));
+                if(yearPrices.length === 0) continue;
 
-                if (endPrice >= yearHigh) highCount++;
-                if (endPrice <= yearLow) lowCount++;
+                const yearHigh = Math.max(...yearPrices);
+                const yearLow = Math.min(...yearPrices);
+                
+                const stockInfo = stockData.basicInfoMap.get(symbol);
+                const stockEntry = {
+                    symbol: symbol,
+                    name: stockInfo?.['證券名稱'] || '',
+                    close: endRecord.close
+                };
+
+                if (endPrice >= yearHigh) {
+                    highCount++;
+                    highStocks.push(stockEntry);
+                }
+                if (endPrice <= yearLow) {
+                    lowCount++;
+                    lowStocks.push(stockEntry);
+                }
             }
-            return { high: highCount, low: lowCount };
+            return { high: highCount, low: lowCount, highStocks, lowStocks };
         }
         
         function getDistributionBins(period) {
@@ -1626,55 +1900,97 @@
             });
         }
         
+        // MODIFIED: Restored v24 logic for renderMarketInstChart for stability
         function renderMarketInstChart() {
-            const industry = dashboardState.selectedIndustry;
-            let relevantSymbols = industry 
-                ? new Set(stockData.basic.filter(s => s['產業別'] === industry).map(s => s['證券代號']))
+            const { selectedPeriod, selectedDate, selectedIndustry } = dashboardState;
+            
+            let relevantSymbols = selectedIndustry 
+                ? new Set(stockData.basic.filter(s => s['產業別'] === selectedIndustry).map(s => s['證券代號']))
                 : new Set(Array.from(stockData.dailyBySymbol.keys()));
             
-            const endIdx = stockData.tradingDates.findIndex(dStr => dStr === toDisplayDate(dashboardState.selectedDate, 'YYYY-MM-DD'));
-            const validEndIdx = endIdx === -1 ? 0 : endIdx;
-            const startIdx = Math.min(stockData.tradingDates.length - 1, validEndIdx + 9);
-            const dateRange = stockData.tradingDates.slice(validEndIdx, startIdx + 1);
+            let labels, dataForeign, dataIt, dataDealer;
+            
+            if (selectedPeriod === 'MTD' || selectedPeriod === 'YTD') {
+                const monthlyData = {};
+                const endDate = toDate(selectedDate);
+                const startDate = new Date(endDate);
+                startDate.setMonth(startDate.getMonth() - 11);
+                startDate.setDate(1);
 
-            const dailyInstValue = {};
-            dateRange.forEach(d => dailyInstValue[d] = { foreign: 0, it: 0, dealer: 0 });
-
-            relevantSymbols.forEach(symbol => {
-                const history = stockData.dailyBySymbol.get(symbol);
-                if (history) {
-                    history.forEach(d => {
-                        const dateStr = toDisplayDate(d.date, 'YYYY-MM-DD');
-                        if (dailyInstValue[dateStr]) {
-                            const price = d.close;
-                            if (price) {
-                                dailyInstValue[dateStr].foreign += (d.foreignNetBuy || 0) * price / 100000000;
-                                dailyInstValue[dateStr].it += (d.itNetBuy || 0) * price / 100000000;
-                                dailyInstValue[dateStr].dealer += (d.dealerNetBuy || 0) * price / 100000000;
-                            }
+                for (const symbol of relevantSymbols) {
+                    const history = stockData.dailyBySymbol.get(symbol);
+                    if (!history) continue;
+                    
+                    const relevantHistory = history.filter(d => d.date >= startDate && d.date <= endDate);
+                    relevantHistory.forEach(d => {
+                        const monthKey = toDisplayDate(d.date, 'YYYY/MM');
+                        if (!monthlyData[monthKey]) {
+                            monthlyData[monthKey] = { foreign: 0, it: 0, dealer: 0 };
+                        }
+                        const price = d.close;
+                        if (price) {
+                            monthlyData[monthKey].foreign += (d.foreignNetBuy || 0) * price / 1e8;
+                            monthlyData[monthKey].it += (d.itNetBuy || 0) * price / 1e8;
+                            monthlyData[monthKey].dealer += (d.dealerNetBuy || 0) * price / 1e8;
                         }
                     });
                 }
-            });
+                
+                const sortedMonths = Object.keys(monthlyData).sort();
+                labels = sortedMonths;
+                dataForeign = sortedMonths.map(m => monthlyData[m].foreign);
+                dataIt = sortedMonths.map(m => monthlyData[m].it);
+                dataDealer = sortedMonths.map(m => monthlyData[m].dealer);
 
-            const sortedDates = Object.keys(dailyInstValue).sort((a,b)=>toDate(a)-toDate(b));
-            
-            if (sortedDates.length === 0) {
+            } else { // For '1D' or 'WTD', show last 10 trading days
+                const endDate = toDate(selectedDate);
+                const endDateStr = toDisplayDate(endDate, 'YYYY-MM-DD');
+                const endIdx = stockData.tradingDates.indexOf(endDateStr);
+
+                if (endIdx < 0) {
+                     updateChart('market-inst-chart', null, `無 ${toDisplayDate(endDate)} 的資料`);
+                     return;
+                }
+                
+                const dateRangeSlice = stockData.tradingDates.slice(endIdx, endIdx + 10);
+                const dateRangeStr = dateRangeSlice.reverse();
+                
+                const dailyInstValue = new Map();
+                dateRangeStr.forEach(dStr => dailyInstValue.set(dStr, { foreign: 0, it: 0, dealer: 0 }));
+
+                stockData.daily.forEach(d => {
+                    const dateStr = d['資料日期'];
+                    if (dailyInstValue.has(dateStr) && relevantSymbols.has(d['證券代號'])) {
+                        const dayData = dailyInstValue.get(dateStr);
+                        const price = parseFloatSafe(d['收盤價']);
+                        if (price) {
+                            dayData.foreign += (parseFloatSafe(d['外資買賣超股數']) || 0) * price / 1e8;
+                            dayData.it += (parseFloatSafe(d['投信買賣超股數']) || 0) * price / 1e8;
+                            dayData.dealer += (parseFloatSafe(d['自營商買賣超股數']) || 0) * price / 1e8;
+                        }
+                    }
+                });
+                
+                labels = [...dailyInstValue.keys()].map(d => toDisplayDate(toDate(d), 'MM/DD'));
+                dataForeign = [...dailyInstValue.values()].map(d => d.foreign);
+                dataIt = [...dailyInstValue.values()].map(d => d.it);
+                dataDealer = [...dailyInstValue.values()].map(d => d.dealer);
+            }
+
+            if (!labels || labels.length === 0) {
                 updateChart('market-inst-chart', null, `無三大法人資料`);
                 return;
             }
             
-            const labels = sortedDates.map(d => formatDateForDisplay(d));
-            const dataMapper = (type) => sortedDates.map(d => dailyInstValue[d][type].toFixed(2));
-
             const datasets = [
-                { label: '外資(億)', data: dataMapper('foreign'), backgroundColor: '#3b82f6' },
-                { label: '投信(億)', data: dataMapper('it'), backgroundColor: '#10b981' },
-                { label: '自營商(億)', data: dataMapper('dealer'), backgroundColor: '#f97316' }
+                { label: '外資(億)', data: dataForeign, backgroundColor: '#3b82f6' },
+                { label: '投信(億)', data: dataIt, backgroundColor: '#10b981' },
+                { label: '自營商(億)', data: dataDealer, backgroundColor: '#f97316' }
             ];
 
             updateChart('market-inst-chart', { labels, datasets });
         }
+
 
         async function renderMarketBreadthChart() {
             const selectedDates = datePickers.breadthTrend?.selectedDates;
@@ -2020,14 +2336,33 @@
             showLoading('正在計算個股與產業指標...');
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            await renderAnalysisCards(symbol);
-            renderCandlestickChart(symbol);
-            renderIndividualInstChart(symbol);
-            renderIndividualRevenueChart(symbol);
-            renderRevenueSeasonalityChart(symbol);
-            renderPeerComparisonChart(symbol);
+            // 根據目前 active 的 tab 決定渲染哪些內容
+            const activeTab = document.querySelector('#analysis-tabs .active')?.dataset.panel || 'analysis-summary';
+            await renderAnalysisTabs(symbol, activeTab);
             
             hideLoading();
+        }
+        
+        async function renderAnalysisTabs(symbol, targetPanelId) {
+            switch(targetPanelId) {
+                case 'analysis-summary':
+                    await renderAnalysisCards(symbol);
+                    renderPeerComparisonChart(symbol);
+                    break;
+                case 'analysis-tech':
+                    renderCandlestickChart(symbol);
+                    break;
+                case 'analysis-chip':
+                    renderIndividualInstChart(symbol);
+                    break;
+                case 'analysis-revenue':
+                    renderIndividualRevenueChart(symbol);
+                    renderRevenueSeasonalityChart(symbol);
+                    break;
+                case 'analysis-financial':
+                    renderFinancialStatementTabs(symbol);
+                    break;
+            }
         }
         
         async function renderAnalysisCards(symbol) {
@@ -2147,45 +2482,61 @@
                 return;
             }
             
-            const data = stockDaily.map(d => ({
+            const selectedDates = datePickers.techChart?.selectedDates;
+            let startDate, endDate;
+            if (selectedDates && selectedDates.length === 2) {
+                startDate = selectedDates[0];
+                endDate = selectedDates[1];
+            } else {
+                endDate = stockDaily[stockDaily.length - 1].date;
+                startDate = new Date(endDate);
+                startDate.setMonth(startDate.getMonth() - 3);
+            }
+
+            const chartData = stockDaily.filter(d => d.date >= startDate && d.date <= endDate);
+
+            const data = chartData.map(d => ({
                 x: d.date.getTime(),
                 o: d.open, h: d.high, l: d.low, c: d.close,
                 s: [d.open, d.close]
             }));
 
-            const volumeData = stockDaily.map(d => ({ x: d.date.getTime(), y: d.shares / 1000 }));
-            const volumeColors = stockDaily.map((d, i) => i === 0 ? '#a0aec0' : (d.close >= stockDaily[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)'));
-            const activePrices = stockDaily.map(d => getActivePrice(d));
+            const volumeData = chartData.map(d => ({ x: d.date.getTime(), y: d.shares / 1000 }));
+            const volumeColors = chartData.map((d, i) => i === 0 || !chartData[i-1] ? '#a0aec0' : (d.close >= chartData[i-1].close ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)'));
+            const activePrices = chartData.map(d => getActivePrice(d));
 
             const calculateMAData = (period) => {
                 if(!period || period <= 0) return [];
                 const ma = [];
-                for (let i = 0; i < stockDaily.length; i++) {
-                    const value = i < period - 1 ? null : activePrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
-                    ma.push({ x: stockDaily[i].date.getTime(), y: value });
+                for (let i = 0; i < chartData.length; i++) {
+                    if (i < period - 1) {
+                        ma.push({ x: chartData[i].date.getTime(), y: null });
+                        continue;
+                    }
+                    const priceSlice = activePrices.slice(i - period + 1, i + 1);
+                    const value = priceSlice.reduce((a, b) => a + b, 0) / period;
+                    ma.push({ x: chartData[i].date.getTime(), y: value });
                 }
                 return ma;
             };
             const calculateBollingerBands = (period = 20, stdDev = 2) => {
                 if(!period || period <= 0 || !stdDev || stdDev <= 0) return { upper: [], middle: [], lower: [] };
-                const smaData = calculateMAData(period).map(d => d.y);
                 const bands = { upper: [], middle: [], lower: [] };
-                for (let i = period - 1; i < stockDaily.length; i++) {
-                    const slice = activePrices.slice(i - period + 1, i + 1);
-                    const mean = smaData[i];
-                    const time = stockDaily[i].date.getTime();
-                    if (mean === null) {
+                for (let i = 0; i < chartData.length; i++) {
+                    const time = chartData[i].date.getTime();
+                    if (i < period - 1) {
                          bands.upper.push({x: time, y: null}); bands.middle.push({x: time, y: null}); bands.lower.push({x: time, y: null});
                          continue;
                     }
+                    const slice = activePrices.slice(i - period + 1, i + 1);
+                    const mean = slice.reduce((a, b) => a + b, 0) / period;
                     const variance = slice.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / period;
                     const sd = Math.sqrt(variance);
                     bands.upper.push({x: time, y: mean + (sd * stdDev)});
                     bands.middle.push({x: time, y: mean});
                     bands.lower.push({x: time, y: mean - (sd * stdDev)});
                 }
-                const padding = Array(period - 1).fill(null).map((_, i) => ({x: stockDaily[i].date.getTime(), y: null}));
-                return { upper: [...padding, ...bands.upper], middle: [...padding, ...bands.middle], lower: [...padding, ...bands.lower] };
+                return bands;
             };
 
             const ma1_period = parseInt(document.getElementById('ma1-period').value, 10);
@@ -2221,14 +2572,28 @@
                 return;
             }
             
-            const dataMapper = (type) => stockHistory.map(d => ({ x: d.date.getTime(), y: (d[type] || 0) / 1000 }));
+            const selectedDates = datePickers.chipChart?.selectedDates;
+            let startDate, endDate;
+            if (selectedDates && selectedDates.length === 2) {
+                startDate = selectedDates[0];
+                endDate = selectedDates[1];
+            } else {
+                endDate = stockHistory[stockHistory.length - 1].date;
+                startDate = new Date(endDate);
+                startDate.setMonth(startDate.getMonth() - 3);
+            }
+
+            const chartData = stockHistory.filter(d => d.date >= startDate && d.date <= endDate);
+            
+            const labels = chartData.map(d => toDisplayDate(d.date, 'MM/DD'));
+            const dataMapper = (type) => chartData.map(d => (d[type] || 0) / 1000);
 
             const datasets = [
                 { label: '外資(張)', data: dataMapper('foreignNetBuy'), backgroundColor: '#3b82f6' },
                 { label: '投信(張)', data: dataMapper('itNetBuy'), backgroundColor: '#10b981' },
                 { label: '自營商(張)', data: dataMapper('dealerNetBuy'), backgroundColor: '#f97316' },
             ];
-            updateChart('institutional-investors-chart', { datasets }, null, { months: 1 });
+            updateChart('institutional-investors-chart', { labels, datasets });
         }
 
         function renderIndividualRevenueChart(symbol) {
@@ -2318,11 +2683,6 @@
                 };
                 chart.update();
             }
-        }
-
-        function populateIndustryDropdowns() {
-            if (stockData.basic.length === 0) return;
-            const industries = [...new Set(stockData.basic.map(s => s['產業別']))].filter(Boolean).sort();
         }
 
         function renderPeerComparisonChart(symbol) {
@@ -2443,6 +2803,203 @@
 
             updateChart('comparison-chart', { datasets });
         }
+
+        // MODIFIED: Restored and corrected v24 logic for financial statements
+        function renderFinancialStatementTabs(symbol) {
+            const container = document.getElementById('financial-statement-container');
+            const financials = stockData.financialsBySymbol.get(symbol);
+
+            if (!financials || financials.length === 0) {
+                container.innerHTML = `<div class="text-center py-8 text-gray-500">找不到 ${symbol} 的財務報表資料。</div>`;
+                return;
+            }
+            
+            const statementsByType = financials.reduce((acc, item) => {
+                const type = item.type;
+                if (!acc[type]) acc[type] = [];
+                acc[type].push(item);
+                return acc;
+            }, {});
+
+            const statementTypes = Object.keys(statementsByType).sort();
+            const typeMapping = { 'BalanceSheet': '資產負債表', 'IncomeStatement': '綜合損益表', 'CashFlow': '現金流量表' };
+
+            let controlsHTML = `<div class="flex flex-wrap justify-between items-center gap-4 mb-4">`;
+            controlsHTML += `<div id="financial-statement-tabs" class="flex space-x-1 border-b">`;
+            statementTypes.forEach((type, index) => {
+                controlsHTML += `<button data-type="${type}" class="sub-tab-btn px-4 py-2 text-sm font-medium ${index === 0 ? 'active' : ''}">${typeMapping[type] || type}</button>`;
+            });
+            controlsHTML += `</div>`;
+            controlsHTML += `<div id="financial-statement-mode-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md">
+                                <button class="control-btn text-xs active" data-mode="quarterly">季度</button>
+                                <button class="control-btn text-xs" data-mode="annual">年度</button>
+                            </div>`;
+            controlsHTML += `</div>`;
+            
+            let panelsHTML = `<div id="financial-statement-panels" class="mt-4"></div>`;
+            container.innerHTML = controlsHTML + panelsHTML;
+            
+            const renderTable = () => {
+                const activeTab = container.querySelector('#financial-statement-tabs .active');
+                const activeModeBtn = container.querySelector('#financial-statement-mode-controls .active');
+                if (!activeTab || !activeModeBtn) return;
+
+                const type = activeTab.dataset.type;
+                const mode = activeModeBtn.dataset.mode;
+                
+                let dataForTable = [];
+                const sourceData = statementsByType[type] || [];
+
+                if (mode === 'annual') {
+                    if (type === 'IncomeStatement' || type === 'CashFlow') {
+                        // For cumulative reports, annual data is the Q4 data.
+                        dataForTable = sourceData.filter(item => item.quarter === 'Q4');
+                    } else { // BalanceSheet
+                        // For snapshot reports, annual data is the latest quarter available for each year.
+                        const latestQuarterByYear = sourceData.reduce((acc, item) => {
+                            const qNum = parseInt(item.quarter.replace('Q',''));
+                            if (!acc[item.year] || qNum > acc[item.year]) {
+                                acc[item.year] = qNum;
+                            }
+                            return acc;
+                        }, {});
+                        dataForTable = sourceData.filter(item => parseInt(item.quarter.replace('Q','')) === latestQuarterByYear[item.year]);
+                    }
+                } else { // quarterly mode
+                    if (type === 'IncomeStatement' || type === 'CashFlow') { // These reports are cumulative, need to calculate net quarterly value
+                        const quarterlyNet = [];
+                        const dataByPeriod = sourceData.reduce((acc, item) => {
+                            const periodKey = `${item.year}Q${parseInt(item.quarter.replace('Q',''))}`;
+                            if (!acc[periodKey]) acc[periodKey] = {};
+                             if (!acc[periodKey][item.field] || item.order < acc[periodKey][item.field].order) {
+                                acc[periodKey][item.field] = item;
+                            }
+                            return acc;
+                        }, {});
+
+                        const sortedPeriods = Object.keys(dataByPeriod).sort((a,b) => {
+                            const [yA, qA] = a.split('Q');
+                            const [yB, qB] = b.split('Q');
+                            if (yA !== yB) return parseInt(yA) - parseInt(yB);
+                            return parseInt(qA) - parseInt(qB);
+                        });
+                        
+                        sortedPeriods.forEach(periodKey => {
+                            const [year, quarter] = periodKey.split('Q').map(Number);
+                            const currentQuarterData = dataByPeriod[periodKey];
+                            
+                            if (quarter === 1) { // For Q1, the value is the quarterly value
+                                Object.values(currentQuarterData).forEach(item => quarterlyNet.push(item));
+                            } else { // For Q2-Q4, subtract previous quarter's cumulative value
+                                const prevQuarterKey = `${year}Q${quarter - 1}`;
+                                const prevQuarterData = dataByPeriod[prevQuarterKey];
+                                if (prevQuarterData) {
+                                    Object.values(currentQuarterData).forEach(item => {
+                                        const prevItem = prevQuarterData[item.field];
+                                        const newValue = prevItem ? parseFloatSafe(item.value) - parseFloatSafe(prevItem.value) : parseFloatSafe(item.value);
+                                        quarterlyNet.push({ ...item, value: isNaN(newValue) ? null : newValue });
+                                    });
+                                } else { // If previous quarter is missing, can't calculate delta, so push as is.
+                                    Object.values(currentQuarterData).forEach(item => quarterlyNet.push({ ...item, value: null }));
+                                }
+                            }
+                        });
+                        dataForTable = quarterlyNet;
+                    } else { // For BalanceSheet, quarterly is just the raw data
+                        dataForTable = sourceData;
+                    }
+                }
+
+                if (dataForTable.length === 0) {
+                    document.getElementById('financial-statement-panels').innerHTML = `<div class="text-center py-8 text-gray-500">在 "${mode}" 模式下無資料可顯示。</div>`;
+                    return;
+                }
+                
+                const periods = [...new Set(dataForTable.map(d => mode === 'annual' ? `${d.year}Y` : `${d.year}${d.quarter}`))]
+                    .sort((a, b) => {
+                        const yearA = parseInt(a.slice(0, 4));
+                        const yearB = parseInt(b.slice(0, 4));
+                        if (yearA !== yearB) return yearB - yearA; // Year descending
+                        if (mode === 'quarterly') {
+                            const quarterA = parseInt(a.slice(5, 6));
+                            const quarterB = parseInt(b.slice(5, 6));
+                            return quarterB - quarterA; // Quarter descending
+                        }
+                        return 0;
+                    });
+                
+                const dataByFieldPeriod = dataForTable.reduce((acc, item) => {
+                    const periodKey = mode === 'annual' ? `${item.year}Y` : `${item.year}${item.quarter}`;
+                    if (!acc[item.field]) acc[item.field] = {};
+                    acc[item.field][periodKey] = item;
+                    return acc;
+                }, {});
+                
+                const fieldMap = new Map();
+                sourceData.forEach(item => { // Use sourceData to get all fields in correct order
+                     if (!fieldMap.has(item.field)) {
+                        fieldMap.set(item.field, { field: item.field, order: item.order, level: item.level });
+                    }
+                });
+                const sortedFields = [...fieldMap.values()]
+                    .sort((a, b) => a.order - b.order)
+                    .map(item => item.field);
+                
+                let tableHTML = `<div class="overflow-auto max-h-[60vh]">
+                        <table class="min-w-full text-sm table-fixed">
+                            <thead class="bg-gray-50 sticky-thead">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-medium text-gray-600 sticky-col whitespace-nowrap" style="width: 300px;">會計項目</th>
+                                    ${periods.map(p => {
+                                        let label = '';
+                                        if (mode === 'annual') {
+                                            label = p; 
+                                        } else {
+                                            const year = p.substring(2, 4);
+                                            const quarterNum = p.substring(5);
+                                            label = `${quarterNum}Q${year}`;
+                                        }
+                                        return `<th class="px-4 py-2 text-right font-medium text-gray-600 whitespace-nowrap" style="width: 120px;">${label}</th>`
+                                    }).join('')}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-100">
+                                ${sortedFields.map(field => {
+                                    const fieldData = fieldMap.get(field) || {};
+                                    const indent = (fieldData.level || 1) - 1;
+                                    return `<tr>
+                                        <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
+                                        ${periods.map(p => {
+                                            const value = dataByFieldPeriod[field]?.[p]?.value;
+                                            return `<td class="px-4 py-2 text-right whitespace-nowrap font-mono">${value != null ? formatNumber(value, 0) : '--'}</td>`;
+                                        }).join('')}
+                                    </tr>`
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+                
+                document.getElementById('financial-statement-panels').innerHTML = tableHTML;
+            };
+
+            container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    renderTable();
+                });
+            });
+            
+            container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    renderTable();
+                });
+            });
+
+            renderTable();
+        }
         
         function getReportName(key) {
             const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收', financials: '財務報表' };
@@ -2541,19 +3098,58 @@
                     if(symbol) renderPeerComparisonChart(symbol);
                 }
             });
+            
+            datePickers.techChart = flatpickr("#tech-chart-datepicker", {
+                mode: "range", dateFormat: "Y-m-d", locale: "zh_tw",
+                onChange: () => {
+                    const symbol = document.getElementById('stock-symbol').value.trim();
+                    if(symbol) renderCandlestickChart(symbol);
+                }
+            });
+            
+            datePickers.chipChart = flatpickr("#chip-chart-datepicker", {
+                mode: "range", dateFormat: "Y-m-d", locale: "zh_tw",
+                onChange: () => {
+                    const symbol = document.getElementById('stock-symbol').value.trim();
+                    if(symbol) renderIndividualInstChart(symbol);
+                }
+            });
+            
+            // --- Analysis Page Tabs ---
+            document.getElementById('analysis-tabs').addEventListener('click', (e) => {
+                if (e.target.matches('.tab-btn')) {
+                    const panelId = e.target.dataset.panel;
+                    document.querySelectorAll('#analysis-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('#analysis-results .tab-panel').forEach(panel => panel.classList.remove('active'));
+                    e.target.classList.add('active');
+                    document.getElementById(panelId).classList.add('active');
+                    
+                    const symbol = document.getElementById('stock-symbol').value.trim();
+                    if (symbol) {
+                        renderAnalysisTabs(symbol, panelId);
+                    }
+                }
+            });
 
             // --- Screener Event Listeners ---
             document.getElementById('screener-tabs').addEventListener('click', (e) => {
                 if (e.target.matches('.tab-btn')) {
                     const panelId = e.target.dataset.panel;
                     document.querySelectorAll('#screener-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
-                    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-                    e.target.classList.add('active');
+                    document.querySelectorAll('#stock-screener .tab-panel').forEach(panel => panel.classList.remove('active'));
                     document.getElementById(`panel-${panelId}`).classList.add('active');
+                    
+                    // Trigger screener on tab change
+                    runActiveScreener();
                 }
             });
-
-            document.getElementById('run-revenue-screener').addEventListener('click', runRevenueMomentumStrategy);
+            
+            const screenerDebounce = debounce(() => runActiveScreener(), 500);
+            document.getElementById('revenue-momentum-controls').addEventListener('change', screenerDebounce);
+            document.getElementById('super-performance-controls').addEventListener('change', screenerDebounce);
+            document.getElementById('it-buy-controls').addEventListener('change', screenerDebounce);
+            document.getElementById('magic-formula-controls').addEventListener('change', screenerDebounce);
+            document.getElementById('f-score-controls').addEventListener('change', screenerDebounce);
         }
         
         function initAllCharts() {
@@ -2567,6 +3163,11 @@
                     onZoomComplete: ({chart}) => chart.update('none')
                 }
             };
+            
+            const noZoomPluginOptions = {
+                 pan: { enabled: false },
+                 zoom: { wheel: { enabled: false }, pinch: { enabled: false } }
+            };
 
             const commonOptions = (extraPlugins = {}, enableZoom = true) => ({ 
                 responsive: true, maintainAspectRatio: false,
@@ -2575,12 +3176,12 @@
                     legend: { display: true, position: 'top', labels: { font: { size: 10 } } },
                     tooltip: { mode: 'index', intersect: false, bodyFont: { size: 12 }, titleFont: { size: 14 }, callbacks: { label: (c) => `${c.dataset.label || ''}: ${formatNumber(c.parsed.y, 2)}` } },
                     datalabels: { display: false },
-                    ...(enableZoom && { zoom: zoomPluginOptions }),
+                    zoom: enableZoom ? zoomPluginOptions : noZoomPluginOptions,
                     ...extraPlugins
                 }
             });
-            const categoryScale = (display = true) => ({ type: 'category', display, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 20, autoSkip: true, autoSkipPadding: 20 } });
-            const timeScale = (unit = 'day') => ({ type: 'time', time: { unit, tooltipFormat: 'yyyy-MM-dd' }, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, source: 'data' } });
+            const categoryScale = (display = true, ticksConfig = {}) => ({ type: 'category', display, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 20, autoSkip: true, autoSkipPadding: 20, ...ticksConfig } });
+            const timeScale = (unit = 'day', displayFormats = {}) => ({ type: 'time', time: { unit, tooltipFormat: 'yyyy/MM/dd', displayFormats }, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, source: 'auto' } });
             const valueScale = (position = 'left', display = true, title = '') => ({ position, display, beginAtZero: false, grid: { color: '#e5e7eb' }, ticks: { font: { size: 10 }, callback: (v) => formatNumber(v, 0) }, title: { display: !!title, text: title, font: {size: 12} } });
 
             const chartConfigs = {
@@ -2588,14 +3189,14 @@
                 'sector-up-down-chart': { type: 'bar', options: { ...commonOptions({legend: {position: 'bottom'}}, false), scales: { x: { stacked: true, grid: { display: false }, ticks: {font: {size: 9}, autoSkip: false} }, yCount: { type: 'linear', position: 'left', stacked: true, grid: { color: '#e5e7eb' }, title: { display: true, text: '家數' } }, yPerf: { type: 'linear', position: 'right', grid: { display: false }, title: { display: true, text: '平均漲跌幅(%)' }, ticks: { color: '#3b82f6', callback: (v) => `${v.toFixed(1)}%` } } } } },
                 'inst-by-sector-chart': { type: 'bar', options: { ...commonOptions({tooltip: { mode: 'y', intersect: true } }, false), indexAxis: 'y', scales: { x: { stacked: true, ticks: { callback: (v) => `${formatNumber(v,1)}億` } }, y: { stacked: true, ticks: { font: {size: 9}, autoSkip: false } } } } },
                 'market-revenue-chart': { type: 'bar', options: { ...commonOptions({}, false), scales: { x: timeScale('month'), y: {...valueScale(undefined, true, '百萬元'), beginAtZero: false} } } },
-                'market-inst-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: { ...categoryScale(), stacked: true }, y: { stacked: true, ...valueScale(undefined, true, '億元') } } } },
-                'market-breadth-chart': { type: 'bar', options: { ...commonOptions(), scales: { x: categoryScale(), y: valueScale('left', true, '家數') } } },
+                'market-inst-chart': { type: 'bar', options: { ...commonOptions({}, false), scales: { x: { ...categoryScale(), stacked: true }, y: { stacked: true, ...valueScale(undefined, true, '億元') } } } },
+                'market-breadth-chart': { type: 'bar', options: { ...commonOptions({}, false), scales: { x: categoryScale(), y: valueScale('left', true, '家數') } } },
                 'candlestick-chart': {
                     type: 'candlestick', 
                     options: {
                         ...commonOptions({ legend: { display: false } }), 
                         scales: { 
-                            x: timeScale(), 
+                            x: timeScale('day', { day: 'MM/dd' }), 
                             yPrice: { position: 'right', stack: 'stock_stack', stackWeight: 3, grid: { color: '#e5e7eb' }, afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max) && axis.max > axis.min){ axis.min *= 0.9; axis.max *= 1.1; } } },
                             yVolume: { position: 'right', stack: 'stock_stack', stackWeight: 1, grid: { display: false }, ticks: { font: { size: 9 }, callback: (v) => v > 1000 ? `${(v/1000).toFixed(0)}k` : v } }
                         }
@@ -2606,7 +3207,7 @@
                     options: { 
                         ...commonOptions(), 
                         scales: { 
-                            x: { ...timeScale(), stacked: false }, 
+                            x: { ...categoryScale(), stacked: false }, 
                             y: { stacked: false, ...valueScale(undefined, true, '張'), afterDataLimits: (axis) => { if(!isNaN(axis.min) && !isNaN(axis.max)){ const range = axis.max - axis.min; if(range > 0) { axis.min -= range*0.1; axis.max += range*0.1; } } } }
                         }
                     } 
@@ -2710,60 +3311,291 @@
         }
 
         // --- 選股策略相關函式 ---
+        
+        function runActiveScreener() {
+            const activeTab = document.querySelector('#screener-tabs .active');
+            if (!activeTab) return;
+            
+            const panelId = activeTab.dataset.panel;
+            switch(panelId) {
+                case 'revenue-momentum':
+                    runRevenueMomentumStrategy();
+                    break;
+                case 'super-performance':
+                    runSuperPerformanceStrategy();
+                    break;
+                case 'it-buy':
+                    runITBuyStrategy();
+                    break;
+                case 'magic-formula':
+                    runMagicFormulaStrategy();
+                    break;
+                case 'f-score':
+                    runFScoreStrategy();
+                    break;
+            }
+        }
 
         function populateScreenerControls() {
-            const revenueMonthSelect = document.getElementById('screener-revenue-month');
-            if (!revenueMonthSelect || !Array.isArray(stockData.revenue)) return;
-
+            if (stockData.tradingDates.length === 0) return;
+            const latestDate = stockData.tradingDates[0];
+            
+            // Revenue Momentum
+            datePickers.rmDate = flatpickr("#rm-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
+            const revenueMonthSelect = document.getElementById('rm-revenue-month');
             const availableMonths = [...new Set(stockData.revenue.map(r => r['資料年月']))].sort().reverse();
             revenueMonthSelect.innerHTML = availableMonths.map(m => `<option value="${m}">${m}</option>`).join('');
+            
+            // Other screeners
+            datePickers.spDate = flatpickr("#sp-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
+            datePickers.itDate = flatpickr("#it-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
+            datePickers.mfDate = flatpickr("#mf-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
+            datePickers.fsDate = flatpickr("#fs-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
         }
         
         async function runRevenueMomentumStrategy() {
-            const resultsContainer = document.getElementById('revenue-screener-results');
+            const resultsContainer = document.getElementById('revenue-momentum-results');
             resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中，請稍候...</div>`;
-            await new Promise(resolve => setTimeout(resolve, 50)); // 讓UI更新
+            await new Promise(resolve => setTimeout(resolve, 10));
 
-            const maPeriod = parseInt(document.getElementById('screener-ma-period').value, 10);
-            const selectedMonthStr = document.getElementById('screener-revenue-month').value;
+            const maPeriod = parseInt(document.getElementById('rm-ma-period').value, 10);
+            const priceMaPeriod = parseInt(document.getElementById('rm-price-ma').value, 10);
+            const selectedMonthStr = document.getElementById('rm-revenue-month').value;
+            const selectedDate = datePickers.rmDate.selectedDates[0];
+            const sortKey = document.getElementById('rm-sort').value;
 
-            if (!maPeriod || maPeriod <= 0) {
-                resultsContainer.innerHTML = `<div class="text-center py-8 text-red-500">MA 期數必須是正整數。</div>`;
+            if (!maPeriod || maPeriod <= 0 || !selectedDate) {
+                resultsContainer.innerHTML = `<div class="text-center py-8 text-red-500">參數不完整。</div>`;
                 return;
             }
 
             const results = [];
             const selectedMonthDate = toDate(selectedMonthStr);
+            const selectedMonthIdx = stockData.revenueBySymbol.get('2330')?.findIndex(r => r.date.getTime() === selectedMonthDate.getTime());
 
             for (const [symbol, revenueHistory] of stockData.revenueBySymbol.entries()) {
                 const targetIndex = revenueHistory.findIndex(r => r.date.getTime() === selectedMonthDate.getTime());
-
-                if (targetIndex < maPeriod + 1) continue; // 需要 t, t-1, t-2 的MA，所以至少要有 maPeriod+1 個前期資料
+                if (targetIndex < maPeriod + 1) continue;
 
                 const ma_t = calculateMovingAverage(revenueHistory.map(r => r.value), targetIndex, maPeriod);
                 const ma_t1 = calculateMovingAverage(revenueHistory.map(r => r.value), targetIndex - 1, maPeriod);
                 const ma_t2 = calculateMovingAverage(revenueHistory.map(r => r.value), targetIndex - 2, maPeriod);
 
                 if (isNaN(ma_t) || isNaN(ma_t1) || isNaN(ma_t2)) continue;
+                if (!(ma_t > ma_t1 && ma_t1 > ma_t2)) continue;
+                
+                const dailyHistory = stockData.dailyBySymbol.get(symbol);
+                if (!dailyHistory) continue;
+                
+                const priceRecord = findClosestTradingDay(dailyHistory, selectedDate, 'before');
+                if (!priceRecord) continue;
+                
+                const priceHistorySlice = dailyHistory.filter(d => d.date <= priceRecord.date);
+                if (priceHistorySlice.length < priceMaPeriod) continue;
+                
+                const prices = priceHistorySlice.map(h => getActivePrice(h));
+                const priceMA = calculateMA(prices, priceMaPeriod);
+                const closePrice = getActivePrice(priceRecord);
 
-                if (ma_t > ma_t1 && ma_t1 > ma_t2) {
-                    const forwardReturn = calculateForwardReturn(symbol, selectedMonthDate);
-                    const stockInfo = stockData.basicInfoMap.get(symbol) || {};
-                    results.push({
-                        symbol: symbol,
-                        name: stockInfo['證券名稱'] || 'N/A',
-                        industry: stockInfo['產業別'] || 'N/A',
-                        revenue: revenueHistory[targetIndex].value,
-                        ma_t,
-                        ma_t1,
-                        ma_t2,
-                        forwardReturn: forwardReturn,
-                    });
+                if (isNaN(priceMA) || isNaN(closePrice) || closePrice < priceMA) continue;
+                
+                const stockInfo = stockData.basicInfoMap.get(symbol) || {};
+                
+                let revenueData = {};
+                for (let i = 0; i < 6; i++) {
+                    const revenueRecord = revenueHistory[targetIndex - i];
+                    if (revenueRecord) {
+                        const monthKey = toDisplayDate(revenueRecord.date, 'YYYY-MM');
+                        revenueData[monthKey] = revenueRecord.value;
+                    }
                 }
+
+                results.push({
+                    symbol: symbol,
+                    name: stockInfo['證券名稱'] || 'N/A',
+                    close: closePrice,
+                    volume: priceRecord.volume,
+                    price_ma: priceMA,
+                    price_ma_ratio: priceMA > 0 ? (closePrice / priceMA - 1) * 100 : 0,
+                    revenue: revenueHistory[targetIndex].value,
+                    ...revenueData
+                });
             }
 
-            results.sort((a, b) => b.revenue - a.revenue);
-            renderScreenerResults(results, selectedMonthStr);
+            results.sort((a, b) => {
+                if (sortKey === 'price_ma_ratio') return b.price_ma_ratio - a.price_ma_ratio;
+                if (sortKey === 'volume') return b.volume - a.volume;
+                if (sortKey === 'revenue') return b.revenue - a.revenue;
+                return 0;
+            });
+
+            const revenueMonths = Object.keys(results[0] || {})
+                .filter(k => /^\d{4}-\d{2}$/.test(k))
+                .sort()
+                .reverse();
+
+            const headers = ['代號', '名稱', '收盤價', '成交值(億)', `價格MA(${priceMaPeriod})`, '乖離率(%)', ...revenueMonths.map(m => `${m.replace('-', '/')}營收`)];
+            
+            const rowMapper = (s) => [
+                s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2),
+                formatNumber(s.price_ma, 2), formatNumber(s.price_ma_ratio, 2),
+                ...revenueMonths.map(m => formatNumber(s[m] / 1000, 0))
+            ];
+
+            renderScreenerResultsTable('revenue-momentum-results', results, headers, rowMapper);
+        }
+
+        // MODIFIED: Restored v24 logic for runSuperPerformanceStrategy
+        async function runSuperPerformanceStrategy() {
+            const resultsContainer = document.getElementById('super-performance-results');
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中...</div>`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const selectedDate = datePickers.spDate.selectedDates[0];
+            if (!selectedDate) return;
+
+            const results = [];
+            const oneYearAgo = new Date(selectedDate); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+            const oneMonthAgo = new Date(selectedDate); oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+            for (const symbol of stockData.dailyBySymbol.keys()) {
+                const history = stockData.dailyBySymbol.get(symbol);
+                const priceHistorySlice = history.filter(d => d.date <= selectedDate);
+                if (priceHistorySlice.length < 200) continue;
+
+                const lastRecord = priceHistorySlice[priceHistorySlice.length - 1];
+                const closePrice = getActivePrice(lastRecord);
+                if (isNaN(closePrice)) continue;
+
+                const prices = priceHistorySlice.map(p => getActivePrice(p));
+                const ma50 = calculateMA(prices, 50);
+                const ma150 = calculateMA(prices, 150);
+                const ma200 = calculateMA(prices, 200);
+
+                if (!(closePrice > ma50 && closePrice > ma150 && closePrice > ma200)) continue;
+                if (!(ma50 > ma150 && ma150 > ma200)) continue;
+                
+                const oneMonthAgoRecord = findClosestTradingDay(priceHistorySlice, oneMonthAgo, 'before');
+                if (!oneMonthAgoRecord) continue;
+                const oneMonthAgoIndex = priceHistorySlice.findIndex(p => p.date.getTime() === oneMonthAgoRecord.date.getTime());
+                const ma200_1M_ago = calculateMA(prices.slice(0, oneMonthAgoIndex + 1), 200);
+                if (!(ma200 > ma200_1M_ago)) continue;
+
+                const yearHistory = priceHistorySlice.filter(d => d.date >= oneYearAgo);
+                const yearLows = yearHistory.map(d => d.low).filter(p => !isNaN(p));
+                const yearHighs = yearHistory.map(d => d.high).filter(p => !isNaN(p));
+                if (yearLows.length === 0 || yearHighs.length === 0) continue;
+                
+                const yearLow = Math.min(...yearLows);
+                const yearHigh = Math.max(...yearHighs);
+
+                if (!(closePrice > yearLow * 1.75)) continue;
+                if (!(closePrice > yearHigh * 0.85)) continue;
+                
+                const last21Records = priceHistorySlice.slice(-21);
+                let upDays = 0;
+                for(let i=1; i < last21Records.length; i++) {
+                    if (getActivePrice(last21Records[i]) > getActivePrice(last21Records[i-1])) upDays++;
+                }
+                if (!(upDays > 10)) continue;
+
+                const stockInfo = stockData.basicInfoMap.get(symbol) || {};
+                results.push({
+                    symbol: symbol,
+                    name: stockInfo['證券名稱'] || 'N/A',
+                    close: closePrice,
+                    volume: lastRecord.volume,
+                    ma50, ma150, ma200,
+                    yearLow, yearHigh,
+                    upDays
+                });
+            }
+            
+            results.sort((a,b) => b.volume - a.volume);
+
+            renderScreenerResultsTable('super-performance-results', results,
+                ['代號', '名稱', '收盤價', '成交值(億)', '年內低點', '年內高點', '20日上漲天數'],
+                (s) => [s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2), formatNumber(s.yearLow, 2), formatNumber(s.yearHigh, 2), s.upDays]
+            );
+        }
+        
+        // MODIFIED: Restored v24 logic for runITBuyStrategy
+        async function runITBuyStrategy() {
+            const resultsContainer = document.getElementById('it-buy-results');
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中...</div>`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const selectedDate = datePickers.itDate.selectedDates[0];
+            const N = parseInt(document.getElementById('it-days').value, 10);
+            const maxChange = parseFloat(document.getElementById('it-change-limit').value);
+            if (!selectedDate || !N || isNaN(maxChange)) return;
+
+            const results = [];
+            const dateStr = toDisplayDate(selectedDate, 'YYYY-MM-DD');
+            const endIdx = stockData.tradingDates.indexOf(dateStr);
+            if(endIdx === -1 || stockData.tradingDates.length < endIdx + N) {
+                resultsContainer.innerHTML = `<div class="text-center py-8 text-red-500">日期範圍不足。</div>`;
+                return;
+            }
+            const dateRange = stockData.tradingDates.slice(endIdx, endIdx + N);
+            const startDateStr = dateRange[dateRange.length - 1];
+
+            for (const symbol of stockData.dailyBySymbol.keys()) {
+                const history = stockData.dailyBySymbol.get(symbol);
+                const endRecord = history.find(d => d.date.getTime() === selectedDate.getTime());
+                const startRecord = history.find(d => d.date.getTime() === toDate(startDateStr).getTime());
+
+                if (!startRecord || !endRecord) continue;
+                
+                const startPrice = getActivePrice(startRecord);
+                const endPrice = getActivePrice(endRecord);
+                if (isNaN(startPrice) || isNaN(endPrice) || startPrice === 0) continue;
+
+                const priceChange = (endPrice / startPrice - 1) * 100;
+                if (priceChange > maxChange) continue;
+                
+                const priceSlice = history.filter(d => d.date >= toDate(startDateStr) && d.date <= selectedDate);
+                const itNetBuySum = priceSlice.reduce((sum, d) => sum + (d.itNetBuy || 0), 0);
+                const sharesOutstanding = endRecord.sharesOutstanding;
+                if (!sharesOutstanding || sharesOutstanding === 0) continue;
+
+                const itBuyRatio = (itNetBuySum / sharesOutstanding) * 100;
+                if (itBuyRatio <= 0) continue; // Only show positive buys
+                
+                const stockInfo = stockData.basicInfoMap.get(symbol) || {};
+                results.push({
+                    symbol,
+                    name: stockInfo['證券名稱'] || 'N/A',
+                    close: endPrice,
+                    volume: endRecord.volume,
+                    itBuyRatio,
+                    priceChange,
+                    itNetBuySum
+                });
+            }
+            
+            results.sort((a,b) => b.itBuyRatio - a.itBuyRatio);
+
+            renderScreenerResultsTable('it-buy-results', results,
+                ['代號', '名稱', '收盤價', '成交值(億)', `投信買超佔股本(%)`, `期間漲幅(%)`, `投信買超(張)`],
+                (s) => [s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2), formatNumber(s.itBuyRatio, 4), formatNumber(s.priceChange, 2), formatNumber(s.itNetBuySum / 1000, 0)]
+            );
+        }
+        
+        async function runMagicFormulaStrategy() {
+             const resultsContainer = document.getElementById('magic-formula-results');
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">此策略計算複雜，請稍候...</div>`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+            // This is a placeholder as the full implementation is very complex
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">神奇公式策略尚未完整實作。<br>需要從財報中提取EBIT, 淨營運資金, 淨固定資產, 並計算企業價值(EV)。</div>`;
+        }
+        
+        async function runFScoreStrategy() {
+            const resultsContainer = document.getElementById('f-score-results');
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">此策略計算複雜，請稍候...</div>`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+             // This is a placeholder as the full implementation is very complex
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">F-Score 策略尚未完整實作。<br>需要從財報中提取ROA, CFO, 負債比, 流動比, 股本, 毛利率, 資產週轉率等數據並進行年度比較。</div>`;
         }
 
         function calculateMovingAverage(data, endIndex, period) {
@@ -2772,39 +3604,13 @@
             if (slice.some(v => v === null || v === undefined || isNaN(v))) return NaN;
             return slice.reduce((a, b) => a + b, 0) / period;
         }
-
-        function calculateForwardReturn(symbol, screeningMonthDate) {
-            const dailyHistory = stockData.dailyBySymbol.get(symbol);
-            if (!dailyHistory) return NaN;
-
-            // 報酬計算期間：篩選月份的下一個月 (t+1) 的月底到下下個月 (t+2) 的月底
-            // 例如：篩選 2025-05 營收(6月公布)，報酬計算 2025-06-30 ~ 2025-07-31
-            const entryPriceDate = new Date(screeningMonthDate);
-            entryPriceDate.setMonth(entryPriceDate.getMonth() + 2, 0); // t+1 月底
-
-            const exitPriceDate = new Date(screeningMonthDate);
-            exitPriceDate.setMonth(exitPriceDate.getMonth() + 3, 0); // t+2 月底
-            
-            const entryRecord = findClosestTradingDay(dailyHistory, entryPriceDate, 'before');
-            const exitRecord = findClosestTradingDay(dailyHistory, exitPriceDate, 'before');
-
-            if (!entryRecord || !exitRecord) return NaN;
-
-            const entryPrice = getActivePrice(entryRecord);
-            const exitPrice = getActivePrice(exitRecord);
-
-            if (isNaN(entryPrice) || isNaN(exitPrice) || entryPrice === 0) return NaN;
-
-            return ((exitPrice / entryPrice) - 1) * 100;
-        }
         
         function findClosestTradingDay(dailyHistory, targetDate, direction = 'before') {
-             // 確保 dailyHistory 是由舊到新排序
             if (direction === 'before') {
                 for (let i = dailyHistory.length - 1; i >= 0; i--) {
                     if (dailyHistory[i].date <= targetDate) return dailyHistory[i];
                 }
-            } else { // after
+            } else {
                 for (let i = 0; i < dailyHistory.length; i++) {
                     if (dailyHistory[i].date >= targetDate) return dailyHistory[i];
                 }
@@ -2812,41 +3618,26 @@
             return null;
         }
 
-        function renderScreenerResults(results, monthStr) {
-            const container = document.getElementById('revenue-screener-results');
+        function renderScreenerResultsTable(containerId, results, headers, rowMapper) {
+            const container = document.getElementById(containerId);
             if (results.length === 0) {
-                container.innerHTML = `<div class="text-center py-8 text-gray-500">在 ${monthStr}，沒有任何股票符合此策略。</div>`;
+                container.innerHTML = `<div class="text-center py-8 text-gray-500">沒有任何股票符合此策略。</div>`;
                 return;
             }
 
-            const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
             const tableHTML = `
-                <p class="text-sm text-gray-600 mb-4">在 ${monthStr} 篩選出 ${results.length} 檔個股，報酬為未來第二個月的整月表現。</p>
+                <p class="text-sm text-gray-600 mb-4">篩選出 ${results.length} 檔個股。</p>
                 <div class="overflow-auto" style="max-height: 60vh;">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="sticky-header">
                             <tr>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">代號</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">名稱</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">產業</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-500">當月營收(百萬)</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-500">營收MA(t)</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-500">營收MA(t-1)</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-500">營收MA(t-2)</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-500">未來第二個月報酬(%)</th>
+                                ${headers.map(h => `<th class="px-4 py-3 text-left font-medium text-gray-500 whitespace-nowrap">${h}</th>`).join('')}
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             ${results.map(s => `
                                 <tr>
-                                    <td class="px-4 py-3 whitespace-nowrap">${s.symbol}</td>
-                                    <td class="px-4 py-3 whitespace-nowrap">${s.name}</td>
-                                    <td class="px-4 py-3 whitespace-nowrap">${s.industry}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">${formatNumber(s.revenue / 1000, 0)}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">${formatNumber(s.ma_t / 1000, 0)}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">${formatNumber(s.ma_t1 / 1000, 0)}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap">${formatNumber(s.ma_t2 / 1000, 0)}</td>
-                                    <td class="px-4 py-3 text-right whitespace-nowrap font-semibold ${numColor(s.forwardReturn)}">${formatNumber(s.forwardReturn, 2)}%</td>
+                                    ${rowMapper(s).map(cell => `<td class="px-4 py-3 whitespace-nowrap">${cell}</td>`).join('')}
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2857,5 +3648,7 @@
         }
     });
     </script>
+
 </body>
 </html>
+
