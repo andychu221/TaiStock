@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股儀表板 v25 (已修正)</title>
+    <title>台股儀表板 v25 (選股策略已修復)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -1900,7 +1900,6 @@
             });
         }
         
-        // MODIFIED: Restored v24 logic for renderMarketInstChart for stability
         function renderMarketInstChart() {
             const { selectedPeriod, selectedDate, selectedIndustry } = dashboardState;
             
@@ -1910,6 +1909,7 @@
             
             let labels, dataForeign, dataIt, dataDealer;
             
+            // MODIFIED: Logic for chart's date range
             if (selectedPeriod === 'MTD' || selectedPeriod === 'YTD') {
                 const monthlyData = {};
                 const endDate = toDate(selectedDate);
@@ -1942,39 +1942,38 @@
                 dataIt = sortedMonths.map(m => monthlyData[m].it);
                 dataDealer = sortedMonths.map(m => monthlyData[m].dealer);
 
-            } else { // For '1D' or 'WTD', show last 10 trading days
-                const endDate = toDate(selectedDate);
-                const endDateStr = toDisplayDate(endDate, 'YYYY-MM-DD');
-                const endIdx = stockData.tradingDates.indexOf(endDateStr);
+            } else { // For 1D and WTD, always show last 10 days
+                const tempEndDate = toDate(selectedDate);
+                tempEndDate.setHours(0, 0, 0, 0);
 
-                if (endIdx < 0) {
-                     updateChart('market-inst-chart', null, `無 ${toDisplayDate(endDate)} 的資料`);
-                     return;
-                }
-                
-                const dateRangeSlice = stockData.tradingDates.slice(endIdx, endIdx + 10);
-                const dateRangeStr = dateRangeSlice.reverse();
-                
-                const dailyInstValue = new Map();
-                dateRangeStr.forEach(dStr => dailyInstValue.set(dStr, { foreign: 0, it: 0, dealer: 0 }));
+                const tradingDatesUptoSelected = stockData.tradingDates.filter(dStr => toDate(dStr) <= tempEndDate);
+                const dateRange = tradingDatesUptoSelected.slice(0, 10).map(dStr => toDate(dStr)).reverse();
 
-                stockData.daily.forEach(d => {
-                    const dateStr = d['資料日期'];
-                    if (dailyInstValue.has(dateStr) && relevantSymbols.has(d['證券代號'])) {
-                        const dayData = dailyInstValue.get(dateStr);
-                        const price = parseFloatSafe(d['收盤價']);
-                        if (price) {
-                            dayData.foreign += (parseFloatSafe(d['外資買賣超股數']) || 0) * price / 1e8;
-                            dayData.it += (parseFloatSafe(d['投信買賣超股數']) || 0) * price / 1e8;
-                            dayData.dealer += (parseFloatSafe(d['自營商買賣超股數']) || 0) * price / 1e8;
-                        }
+                const dailyInstValue = {};
+                dateRange.forEach(d => dailyInstValue[toDisplayDate(d, 'YYYY-MM-DD')] = { foreign: 0, it: 0, dealer: 0 });
+
+                relevantSymbols.forEach(symbol => {
+                    const history = stockData.dailyBySymbol.get(symbol);
+                    if (history) {
+                        history.forEach(d => {
+                            const dateStr = toDisplayDate(d.date, 'YYYY-MM-DD');
+                            if (dailyInstValue[dateStr]) {
+                                const price = d.close;
+                                if (price) {
+                                    dailyInstValue[dateStr].foreign += (d.foreignNetBuy || 0) * price / 1e8;
+                                    dailyInstValue[dateStr].it += (d.itNetBuy || 0) * price / 1e8;
+                                    dailyInstValue[dateStr].dealer += (d.dealerNetBuy || 0) * price / 1e8;
+                                }
+                            }
+                        });
                     }
                 });
                 
-                labels = [...dailyInstValue.keys()].map(d => toDisplayDate(toDate(d), 'MM/DD'));
-                dataForeign = [...dailyInstValue.values()].map(d => d.foreign);
-                dataIt = [...dailyInstValue.values()].map(d => d.it);
-                dataDealer = [...dailyInstValue.values()].map(d => d.dealer);
+                const sortedDates = Object.keys(dailyInstValue).sort();
+                labels = sortedDates.map(d => toDisplayDate(toDate(d), 'MM/DD'));
+                dataForeign = sortedDates.map(d => dailyInstValue[d].foreign);
+                dataIt = sortedDates.map(d => dailyInstValue[d].it);
+                dataDealer = sortedDates.map(d => dailyInstValue[d].dealer);
             }
 
             if (!labels || labels.length === 0) {
@@ -2478,7 +2477,7 @@
         function renderCandlestickChart(symbol) {
             const stockDaily = stockData.dailyBySymbol.get(symbol);
             if (!stockDaily || stockDaily.length === 0) {
-                updateChart('candlestick-chart', null, `無 ${symbol} 的每日行情資料`);
+                updateChart('candlestick-chart', null, `無 ${symbol} の每日行情資料`);
                 return;
             }
             
@@ -2568,7 +2567,7 @@
         function renderIndividualInstChart(symbol) {
             const stockHistory = stockData.dailyBySymbol.get(symbol);
             if(!stockHistory || stockHistory.length === 0) { 
-                updateChart('institutional-investors-chart', null, `無 ${symbol} 的三大法人資料`);
+                updateChart('institutional-investors-chart', null, `無 ${symbol} の三大法人資料`);
                 return;
             }
             
@@ -2600,7 +2599,7 @@
             let stockRevenue = stockData.revenueBySymbol.get(symbol) || [];
             
             if (stockRevenue.length === 0) { 
-                updateChart('revenue-trend-chart-individual', null, `無 ${symbol} 的月營收資料`);
+                updateChart('revenue-trend-chart-individual', null, `無 ${symbol} の月營收資料`);
                 return;
             }
             
@@ -2617,7 +2616,7 @@
                 return;
             }
             if (stockRevenue.length === 0) {
-                 updateChart('revenue-seasonality-chart', null, `無 ${symbol} 的月營收資料`);
+                 updateChart('revenue-seasonality-chart', null, `無 ${symbol} の月營收資料`);
                  return;
             }
 
@@ -2804,7 +2803,6 @@
             updateChart('comparison-chart', { datasets });
         }
 
-        // MODIFIED: Restored and corrected v24 logic for financial statements
         function renderFinancialStatementTabs(symbol) {
             const container = document.getElementById('financial-statement-container');
             const financials = stockData.financialsBySymbol.get(symbol);
@@ -2851,27 +2849,14 @@
                 const sourceData = statementsByType[type] || [];
 
                 if (mode === 'annual') {
-                    if (type === 'IncomeStatement' || type === 'CashFlow') {
-                        // For cumulative reports, annual data is the Q4 data.
-                        dataForTable = sourceData.filter(item => item.quarter === 'Q4');
-                    } else { // BalanceSheet
-                        // For snapshot reports, annual data is the latest quarter available for each year.
-                        const latestQuarterByYear = sourceData.reduce((acc, item) => {
-                            const qNum = parseInt(item.quarter.replace('Q',''));
-                            if (!acc[item.year] || qNum > acc[item.year]) {
-                                acc[item.year] = qNum;
-                            }
-                            return acc;
-                        }, {});
-                        dataForTable = sourceData.filter(item => parseInt(item.quarter.replace('Q','')) === latestQuarterByYear[item.year]);
-                    }
+                    dataForTable = sourceData.filter(item => item.quarter === 'Q4');
                 } else { // quarterly mode
-                    if (type === 'IncomeStatement' || type === 'CashFlow') { // These reports are cumulative, need to calculate net quarterly value
+                    if (type === 'IncomeStatement' || type === 'CashFlow') { // These reports are cumulative
                         const quarterlyNet = [];
                         const dataByPeriod = sourceData.reduce((acc, item) => {
                             const periodKey = `${item.year}Q${parseInt(item.quarter.replace('Q',''))}`;
                             if (!acc[periodKey]) acc[periodKey] = {};
-                             if (!acc[periodKey][item.field] || item.order < acc[periodKey][item.field].order) {
+                            if (!acc[periodKey][item.field] || item.order < acc[periodKey][item.field].order) {
                                 acc[periodKey][item.field] = item;
                             }
                             return acc;
@@ -2899,7 +2884,7 @@
                                         const newValue = prevItem ? parseFloatSafe(item.value) - parseFloatSafe(prevItem.value) : parseFloatSafe(item.value);
                                         quarterlyNet.push({ ...item, value: isNaN(newValue) ? null : newValue });
                                     });
-                                } else { // If previous quarter is missing, can't calculate delta, so push as is.
+                                } else { // If previous quarter is missing, can't calculate delta
                                     Object.values(currentQuarterData).forEach(item => quarterlyNet.push({ ...item, value: null }));
                                 }
                             }
@@ -2936,7 +2921,7 @@
                 }, {});
                 
                 const fieldMap = new Map();
-                sourceData.forEach(item => { // Use sourceData to get all fields in correct order
+                dataForTable.forEach(item => {
                      if (!fieldMap.has(item.field)) {
                         fieldMap.set(item.field, { field: item.field, order: item.order, level: item.level });
                     }
@@ -3137,6 +3122,7 @@
                     const panelId = e.target.dataset.panel;
                     document.querySelectorAll('#screener-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
                     document.querySelectorAll('#stock-screener .tab-panel').forEach(panel => panel.classList.remove('active'));
+                    e.target.classList.add('active');
                     document.getElementById(`panel-${panelId}`).classList.add('active');
                     
                     // Trigger screener on tab change
@@ -3310,7 +3296,7 @@
             updateActiveState(initialHash);
         }
 
-        // --- 選股策略相關函式 ---
+        // --- 選股策略相關函式 (RESTORED FROM V24) ---
         
         function runActiveScreener() {
             const activeTab = document.querySelector('#screener-tabs .active');
@@ -3371,7 +3357,6 @@
 
             const results = [];
             const selectedMonthDate = toDate(selectedMonthStr);
-            const selectedMonthIdx = stockData.revenueBySymbol.get('2330')?.findIndex(r => r.date.getTime() === selectedMonthDate.getTime());
 
             for (const [symbol, revenueHistory] of stockData.revenueBySymbol.entries()) {
                 const targetIndex = revenueHistory.findIndex(r => r.date.getTime() === selectedMonthDate.getTime());
@@ -3429,10 +3414,10 @@
                 return 0;
             });
 
-            const revenueMonths = Object.keys(results[0] || {})
+            const revenueMonths = results.length > 0 ? Object.keys(results[0] || {})
                 .filter(k => /^\d{4}-\d{2}$/.test(k))
                 .sort()
-                .reverse();
+                .reverse() : [];
 
             const headers = ['代號', '名稱', '收盤價', '成交值(億)', `價格MA(${priceMaPeriod})`, '乖離率(%)', ...revenueMonths.map(m => `${m.replace('-', '/')}營收`)];
             
@@ -3445,7 +3430,6 @@
             renderScreenerResultsTable('revenue-momentum-results', results, headers, rowMapper);
         }
 
-        // MODIFIED: Restored v24 logic for runSuperPerformanceStrategy
         async function runSuperPerformanceStrategy() {
             const resultsContainer = document.getElementById('super-performance-results');
             resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中...</div>`;
@@ -3472,6 +3456,7 @@
                 const ma150 = calculateMA(prices, 150);
                 const ma200 = calculateMA(prices, 200);
 
+                if (isNaN(ma50) || isNaN(ma150) || isNaN(ma200)) continue;
                 if (!(closePrice > ma50 && closePrice > ma150 && closePrice > ma200)) continue;
                 if (!(ma50 > ma150 && ma150 > ma200)) continue;
                 
@@ -3479,7 +3464,7 @@
                 if (!oneMonthAgoRecord) continue;
                 const oneMonthAgoIndex = priceHistorySlice.findIndex(p => p.date.getTime() === oneMonthAgoRecord.date.getTime());
                 const ma200_1M_ago = calculateMA(prices.slice(0, oneMonthAgoIndex + 1), 200);
-                if (!(ma200 > ma200_1M_ago)) continue;
+                if (isNaN(ma200_1M_ago) || !(ma200 > ma200_1M_ago)) continue;
 
                 const yearHistory = priceHistorySlice.filter(d => d.date >= oneYearAgo);
                 const yearLows = yearHistory.map(d => d.low).filter(p => !isNaN(p));
@@ -3519,7 +3504,6 @@
             );
         }
         
-        // MODIFIED: Restored v24 logic for runITBuyStrategy
         async function runITBuyStrategy() {
             const resultsContainer = document.getElementById('it-buy-results');
             resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中...</div>`;
@@ -3560,7 +3544,7 @@
                 if (!sharesOutstanding || sharesOutstanding === 0) continue;
 
                 const itBuyRatio = (itNetBuySum / sharesOutstanding) * 100;
-                if (itBuyRatio <= 0) continue; // Only show positive buys
+                if (itBuyRatio <= 0) continue;
                 
                 const stockInfo = stockData.basicInfoMap.get(symbol) || {};
                 results.push({
