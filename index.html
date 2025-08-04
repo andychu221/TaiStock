@@ -2812,6 +2812,8 @@
                 return;
             }
             
+            let currentUnit = 'M';
+
             const statementsByType = financials.reduce((acc, item) => {
                 const type = item.type;
                 if (!acc[type]) acc[type] = [];
@@ -2828,15 +2830,21 @@
                 controlsHTML += `<button data-type="${type}" class="sub-tab-btn px-4 py-2 text-sm font-medium ${index === 0 ? 'active' : ''}">${typeMapping[type] || type}</button>`;
             });
             controlsHTML += `</div>`;
+            controlsHTML += `<div class="flex items-center gap-4">`;
+            controlsHTML += `<div class="text-sm text-gray-500 font-medium">Unit: TWD</div>`;
+            controlsHTML += `<div id="financial-statement-unit-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md">
+                                <button class="control-btn text-xs" data-unit="K">$K</button>
+                                <button class="control-btn text-xs active" data-unit="M">$M</button>
+                                <button class="control-btn text-xs" data-unit="B">$B</button>
+                            </div>`;
             controlsHTML += `<div id="financial-statement-mode-controls" class="flex items-center space-x-1 bg-gray-100 p-1 rounded-md">
                                 <button class="control-btn text-xs active" data-mode="quarterly">季度</button>
                                 <button class="control-btn text-xs" data-mode="annual">年度</button>
                             </div>`;
-            controlsHTML += `</div>`;
-            
+            controlsHTML += `</div></div>`;
             let panelsHTML = `<div id="financial-statement-panels" class="mt-4"></div>`;
             container.innerHTML = controlsHTML + panelsHTML;
-            
+
             const renderTable = () => {
                 const activeTab = container.querySelector('#financial-statement-tabs .active');
                 const activeModeBtn = container.querySelector('#financial-statement-mode-controls .active');
@@ -2845,54 +2853,81 @@
                 const type = activeTab.dataset.type;
                 const mode = activeModeBtn.dataset.mode;
                 
+                const unitCtrl = container.querySelector('#financial-statement-unit-controls .active');
+                currentUnit = unitCtrl ? unitCtrl.dataset.unit : 'M';
+                let divisor = 1000;
+                if (currentUnit === 'K') divisor = 1;
+                if (currentUnit === 'B') divisor = 1000000;
+
                 let dataForTable = [];
                 const sourceData = statementsByType[type] || [];
 
                 if (mode === 'annual') {
-                    dataForTable = sourceData.filter(item => item.quarter === 'Q4');
-                } else { // quarterly mode
-                    if (type === 'IncomeStatement' || type === 'CashFlow') { // These reports are cumulative
-                        const quarterlyNet = [];
-                        const dataByPeriod = sourceData.reduce((acc, item) => {
-                            const periodKey = `${item.year}Q${parseInt(item.quarter.replace('Q',''))}`;
+                    // 年度資料邏輯：直接篩選第四季的累計值作為年度值
+                    dataForTable = sourceData.filter(item => item && String(item.quarter).trim() === '4');
+                } else { 
+                    // --- START: REFINED SINGLE-QUARTER CALCULATION ---
+                    if (type === 'IncomeStatement' || type === 'CashFlow') {
+                        // 步驟 1: 將原始(累計)數據按期間分組
+                        const cumulativeDataByPeriod = sourceData.reduce((acc, item) => {
+                            if (!item || !item.year || !item.quarter) return acc;
+                            const periodKey = `${item.year}Q${item.quarter}`;
                             if (!acc[periodKey]) acc[periodKey] = {};
-                            if (!acc[periodKey][item.field] || item.order < acc[periodKey][item.field].order) {
-                                acc[periodKey][item.field] = item;
-                            }
+                            acc[periodKey][item.field] = item;
                             return acc;
                         }, {});
 
-                        const sortedPeriods = Object.keys(dataByPeriod).sort((a,b) => {
-                            const [yA, qA] = a.split('Q');
-                            const [yB, qB] = b.split('Q');
-                            if (yA !== yB) return parseInt(yA) - parseInt(yB);
-                            return parseInt(qA) - parseInt(qB);
+                        // 步驟 2: 按時間順序排序所有期間
+                        const sortedPeriods = Object.keys(cumulativeDataByPeriod).sort((a,b) => {
+                             const [yA, qA_str] = a.split('Q');
+                             const [yB, qB_str] = b.split('Q');
+                             const yA_num = parseInt(yA), yB_num = parseInt(yB);
+                             const qA_num = parseInt(qA_str), qB_num = parseInt(qB_str);
+                             if (yA_num !== yB_num) return yA_num - yB_num;
+                             return qA_num - qB_num;
                         });
                         
+                        const singleQuarterData = [];
+                        
+                        // 步驟 3: 遍歷所有排序好的期間，計算單季數據
                         sortedPeriods.forEach(periodKey => {
-                            const [year, quarter] = periodKey.split('Q').map(Number);
-                            const currentQuarterData = dataByPeriod[periodKey];
-                            
-                            if (quarter === 1) { // For Q1, the value is the quarterly value
-                                Object.values(currentQuarterData).forEach(item => quarterlyNet.push(item));
-                            } else { // For Q2-Q4, subtract previous quarter's cumulative value
+                            const [yearStr, quarterStr] = periodKey.split('Q');
+                            const year = parseInt(yearStr);
+                            const quarter = parseInt(quarterStr);
+                            const currentQuarterItems = cumulativeDataByPeriod[periodKey];
+
+                            // 對於 Q1，其單季值 = 累計值，無需計算
+                            if (quarter === 1) {
+                                Object.values(currentQuarterItems).forEach(item => singleQuarterData.push(item));
+                            } else {
+                                // 對於 Q2, Q3, Q4，其單季值 = 當季累計 - 上一季累計
                                 const prevQuarterKey = `${year}Q${quarter - 1}`;
-                                const prevQuarterData = dataByPeriod[prevQuarterKey];
-                                if (prevQuarterData) {
-                                    Object.values(currentQuarterData).forEach(item => {
-                                        const prevItem = prevQuarterData[item.field];
-                                        const newValue = prevItem ? parseFloatSafe(item.value) - parseFloatSafe(prevItem.value) : parseFloatSafe(item.value);
-                                        quarterlyNet.push({ ...item, value: isNaN(newValue) ? null : newValue });
-                                    });
-                                } else { // If previous quarter is missing, can't calculate delta
-                                    Object.values(currentQuarterData).forEach(item => quarterlyNet.push({ ...item, value: null }));
-                                }
+                                const prevQuarterItems = cumulativeDataByPeriod[prevQuarterKey];
+
+                                // 遍歷當季的每一個會計科目
+                                Object.values(currentQuarterItems).forEach(item => {
+                                    let singleQuarterValue = parseFloatSafe(item.value);
+                                    
+                                    // 如果找到了上一季的數據，就進行減法
+                                    if (prevQuarterItems && prevQuarterItems[item.field]) {
+                                        const prevValue = parseFloatSafe(prevQuarterItems[item.field].value);
+                                        if (!isNaN(singleQuarterValue) && !isNaN(prevValue)) {
+                                            singleQuarterValue = singleQuarterValue - prevValue;
+                                        }
+                                    }
+                                    
+                                    // 將計算出的單季數據放入新的物件中
+                                    singleQuarterData.push({ ...item, value: singleQuarterValue });
+                                });
                             }
                         });
-                        dataForTable = quarterlyNet;
-                    } else { // For BalanceSheet, quarterly is just the raw data
+                        // 步驟 4: 使用計算完成的單季數據作為表格的最終數據源
+                        dataForTable = singleQuarterData;
+                    } else { 
+                        // 資產負債表是時點數，直接使用原始數據
                         dataForTable = sourceData;
                     }
+                    // --- END: REFINED SINGLE-QUARTER CALCULATION ---
                 }
 
                 if (dataForTable.length === 0) {
@@ -2900,29 +2935,33 @@
                     return;
                 }
                 
-                const periods = [...new Set(dataForTable.map(d => mode === 'annual' ? `${d.year}Y` : `${d.year}${d.quarter}`))]
+                 const periods = [...new Set(dataForTable.filter(d => d && d.year && d.quarter).map(d => {
+                        return mode === 'annual' ? d.year.toString() : `${d.year}Q${d.quarter}`;
+                    }))]
                     .sort((a, b) => {
-                        const yearA = parseInt(a.slice(0, 4));
-                        const yearB = parseInt(b.slice(0, 4));
-                        if (yearA !== yearB) return yearB - yearA; // Year descending
+                        const yearA = parseInt(a.substring(0, 4));
+                        const yearB = parseInt(b.substring(0, 4));
+                        if (yearA !== yearB) return yearB - yearA;
+
                         if (mode === 'quarterly') {
-                            const quarterA = parseInt(a.slice(5, 6));
-                            const quarterB = parseInt(b.slice(5, 6));
-                            return quarterB - quarterA; // Quarter descending
+                            const quarterA = parseInt(a.split('Q')[1] || 0);
+                            const quarterB = parseInt(b.split('Q')[1] || 0);
+                            return quarterB - quarterA;
                         }
                         return 0;
                     });
                 
                 const dataByFieldPeriod = dataForTable.reduce((acc, item) => {
-                    const periodKey = mode === 'annual' ? `${item.year}Y` : `${item.year}${item.quarter}`;
+                    if (!item || !item.field) return acc;
+                    const periodKey = mode === 'annual' ? item.year.toString() : `${item.year}Q${item.quarter}`;
                     if (!acc[item.field]) acc[item.field] = {};
                     acc[item.field][periodKey] = item;
                     return acc;
                 }, {});
-                
+
                 const fieldMap = new Map();
                 dataForTable.forEach(item => {
-                     if (!fieldMap.has(item.field)) {
+                     if (item && item.field && !fieldMap.has(item.field)) {
                         fieldMap.set(item.field, { field: item.field, order: item.order, level: item.level });
                     }
                 });
@@ -2936,13 +2975,16 @@
                                 <tr>
                                     <th class="px-4 py-2 text-left font-medium text-gray-600 sticky-col whitespace-nowrap" style="width: 300px;">會計項目</th>
                                     ${periods.map(p => {
-                                        let label = '';
+                                        let label = p; 
                                         if (mode === 'annual') {
-                                            label = p; 
+                                            label = `${p}年`;
                                         } else {
-                                            const year = p.substring(2, 4);
-                                            const quarterNum = p.substring(5);
-                                            label = `${quarterNum}Q${year}`;
+                                            const parts = p.split('Q');
+                                            if (parts.length === 2) {
+                                                const year = parts[0].slice(-2);
+                                                const quarterNum = parts[1];
+                                                label = `${quarterNum}Q${year}`;
+                                            }
                                         }
                                         return `<th class="px-4 py-2 text-right font-medium text-gray-600 whitespace-nowrap" style="width: 120px;">${label}</th>`
                                     }).join('')}
@@ -2956,28 +2998,34 @@
                                         <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
                                         ${periods.map(p => {
                                             const value = dataByFieldPeriod[field]?.[p]?.value;
-                                            return `<td class="px-4 py-2 text-right whitespace-nowrap font-mono">${value != null ? formatNumber(value, 0) : '--'}</td>`;
+                                            const displayValue = value != null ? formatNumber(parseFloatSafe(value) / divisor, 0) : '--';
+                                            return `<td class="px-4 py-2 text-right whitespace-nowrap text-gray-700">${displayValue}</td>`;
                                         }).join('')}
                                     </tr>`
                                 }).join('')}
                             </tbody>
                         </table>
                     </div>`;
-                
                 document.getElementById('financial-statement-panels').innerHTML = tableHTML;
             };
-
-            container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(btn => {
+            
+             container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(b => b.classList.remove('active'));
                     e.target.classList.add('active');
                     renderTable();
                 });
             });
-            
             container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    renderTable();
+                });
+            });
+            container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(b => b.classList.remove('active'));
                     e.target.classList.add('active');
                     renderTable();
                 });
