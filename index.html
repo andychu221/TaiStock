@@ -829,62 +829,51 @@
             try {
                 const dataUrlPrefix = `https://raw.githubusercontent.com/${githubSettings.user}/${githubSettings.repo}/main/data`;
                 const allPromises = [];
-
-                // 1. 載入基本資料
-                allPromises.push(fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`)
-                    .then(res => res.ok ? res.json() : Promise.reject('basic.json failed'))
-                    .then(data => ({ type: 'basic', data })));
-                
-                // 2. 載入營收資料 (單一檔案)
-                allPromises.push(fetch(`${dataUrlPrefix}/revenue.json?v=${new Date().getTime()}`)
-                    .then(res => res.ok ? res.json() : null)
-                    .then(data => ({ type: 'revenue', data })));
-                
-                // 3. 遍歷目錄載入每日行情與財務報表
                 const now = new Date();
                 const currentYear = now.getFullYear();
                 const dailyStartYear = currentYear - 1;
                 const financialStartYear = currentYear - 2;
 
-                const apiRepoUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/contents/data`;
-                const yearFoldersResponse = await fetch(apiRepoUrl);
-                if (!yearFoldersResponse.ok) throw new Error(`無法讀取 GitHub repo 根目錄: ${yearFoldersResponse.status}`);
-                const yearFolders = await yearFoldersResponse.json();
+                // 1. 載入基本資料與營收 (維持不變)
+                allPromises.push(fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`)
+                    .then(res => res.ok ? res.json() : Promise.reject('basic.json failed'))
+                    .then(data => ({ type: 'basic', data })));
+                
+                allPromises.push(fetch(`${dataUrlPrefix}/revenue.json?v=${new Date().getTime()}`)
+                    .then(res => res.ok ? res.json() : null)
+                    .then(data => ({ type: 'revenue', data })));
+                
+                // --- START: 加速讀取的核心修改 ---
+                // 2. 直接生成可能的檔案路徑，而不是列出目錄
+                for (let year = financialStartYear; year <= currentYear; year++) {
+                    for (let q = 1; q <= 4; q++) {
+                        const quarter = `Q${q}`;
 
-                for (const yearItem of yearFolders) {
-                    if (yearItem.type !== 'dir' || !/^\d{4}$/.test(yearItem.name)) continue;
-                    const year = parseInt(yearItem.name, 10);
+                        // 生成財務報表的路徑
+                        const financialFiles = ['IS.json', 'BS.json', 'CF.json'];
+                        financialFiles.forEach(fileName => {
+                            const financialsUrl = `${dataUrlPrefix}/${year}/${quarter}/${fileName}?v=${new Date().getTime()}`;
+                            allPromises.push(fetch(financialsUrl)
+                                .then(res => res.ok ? res.json() : null)
+                                .then(data => ({type: 'financials', data}))
+                            );
+                        });
 
-                    if (year < dailyStartYear && year < financialStartYear) continue;
-
-                    const quarterFoldersResponse = await fetch(yearItem.url);
-                    if (!quarterFoldersResponse.ok) continue;
-                    const quarterFolders = await quarterFoldersResponse.json();
-                    
-                    for (const quarterItem of quarterFolders) {
-                        if (quarterItem.type !== 'dir' || !/^\dQ$/.test(quarterItem.name)) continue;
-                        const quarter = quarterItem.name;
-
-                        if (year >= financialStartYear) {
-                            const financialsUrl = `${dataUrlPrefix}/${year}/${quarter}/financials.json?v=${new Date().getTime()}`;
-                            allPromises.push(fetch(financialsUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'financials', data})));
-                        }
-
+                        // 如果年份在每日行情的範圍內，生成每日行情路徑
                         if (year >= dailyStartYear) {
-                            const monthFoldersResponse = await fetch(quarterItem.url);
-                            if (!monthFoldersResponse.ok) continue;
-                            const monthFolders = await monthFoldersResponse.json();
-
-                            for (const monthItem of monthFolders) {
-                                 if (monthItem.type === 'dir' && /^\d{2}$/.test(monthItem.name)) {
-                                    const month = monthItem.name;
-                                    const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
-                                    allPromises.push(fetch(dailyUrl).then(res => res.ok ? res.json() : null).then(data => ({type: 'daily', data})));
-                                }
+                            // 每個季度有三個月份
+                            for (let m = (q - 1) * 3 + 1; m <= q * 3; m++) {
+                                const month = m.toString().padStart(2, '0');
+                                const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
+                                allPromises.push(fetch(dailyUrl)
+                                    .then(res => res.ok ? res.json() : null)
+                                    .then(data => ({type: 'daily', data}))
+                                );
                             }
                         }
                     }
                 }
+                // --- END: 加速讀取的核心修改 ---
                 
                 let filesProcessed = 0;
                 const totalFilesToLoad = allPromises.length;
@@ -894,7 +883,7 @@
                 };
 
                 const wrappedPromises = allPromises.map(p => 
-                    p.catch(() => null) // 確保任何 fetch 失敗都不會中斷 Promise.all
+                    p.catch(() => null)
                      .then(res => {
                         updateLoadingProgress();
                         return res;
@@ -902,7 +891,7 @@
                 );
 
                 const results = await Promise.all(wrappedPromises);
-
+                
                 stockData.daily = [];
                 stockData.revenue = [];
                 stockData.financials = [];
@@ -911,7 +900,11 @@
                 results.forEach(result => {
                     if (result && result.data) {
                         if (Array.isArray(result.data)) {
-                            stockData[result.type].push(...result.data);
+                            if (result.type === 'financials') {
+                                stockData.financials.push(...result.data);
+                            } else if (stockData[result.type] && Array.isArray(stockData[result.type])) {
+                                stockData[result.type].push(...result.data);
+                            }
                         } else {
                             stockData[result.type] = result.data;
                         }
@@ -928,11 +921,9 @@
             }
         }
         
-        /**
-         * 檢查是否為要納入計算的普通股
-         * @param {string} symbol - 股票代號
-         * @returns {boolean}
-         */
+        
+        
+        
         function isNormalStock(symbol) {
             if (typeof symbol !== 'string') return false;
             return /^\d{4}$/.test(symbol) && !symbol.startsWith('00');
@@ -2995,14 +2986,30 @@
                                     const fieldData = fieldMap.get(field) || {};
                                     const indent = (fieldData.level || 1) - 1;
                                     return `<tr>
-                                        <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
-                                        ${periods.map(p => {
-                                            const value = dataByFieldPeriod[field]?.[p]?.value;
-                                            const displayValue = value != null ? formatNumber(parseFloatSafe(value) / divisor, 0) : '--';
-                                            return `<td class="px-4 py-2 text-right whitespace-nowrap text-gray-700">${displayValue}</td>`;
-                                        }).join('')}
-                                    </tr>`
-                                }).join('')}
+        <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
+        ${periods.map(p => {
+            // --- START: 修改部分 ---
+            const dataItem = dataByFieldPeriod[field]?.[p];
+            let displayValue = '--';
+
+            if (dataItem && dataItem.value != null) {
+                const rawValue = parseFloatSafe(dataItem.value);
+                if (!isNaN(rawValue)) {
+                    // 檢查 scale 屬性
+                    if (dataItem.scale === 0) {
+                        // scale 為 0，直接格式化原始值，不進行單位換算
+                        displayValue = formatNumber(rawValue, 0);
+                    } else {
+                        // 否則，進行單位換算
+                        displayValue = formatNumber(rawValue / divisor, 0);
+                    }
+                }
+            }
+            // --- END: 修改部分 ---
+            return `<td class="px-4 py-2 text-right whitespace-nowrap text-gray-700">${displayValue}</td>`;
+        }).join('')}
+    </tr>`
+}).join('')}
                             </tbody>
                         </table>
                     </div>`;
@@ -3033,6 +3040,10 @@
 
             renderTable();
         }
+        
+        
+        
+        
         
         function getReportName(key) {
             const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收', financials: '財務報表' };
