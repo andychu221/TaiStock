@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -189,6 +188,25 @@
             margin-bottom: 1rem;
         }
         .strategy-logic p { margin-bottom: 0.25rem; }
+        
+        /* --- Styles for Resizable Columns --- */
+        th.resizable {
+            position: relative;
+            user-select: none;
+        }
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 20;
+        }
+        .resizer:hover, .resizing {
+            background-color: #3b82f6;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body class="flex h-screen text-gray-800">
@@ -818,7 +836,7 @@
             return `Q${Math.floor((month - 1) / 3) + 1}`;
         }
 
-        async function loadAllData() {
+		async function loadAllData() {
             sidebarInfoText.textContent = '準備從 GitHub 載入資料...';
             if (!githubSettings.user || !githubSettings.repo) {
                 sidebarInfoText.textContent = '尚未設定 GitHub 儲存庫。';
@@ -827,53 +845,67 @@
             }
 
             try {
-                const dataUrlPrefix = `https://raw.githubusercontent.com/${githubSettings.user}/${githubSettings.repo}/main/data`;
+                const dataUrlPrefix = `https://raw.githubusercontent.com/${githubSettings.user}/${githubSettings.repo}/main`;
                 const allPromises = [];
+
+                showLoading('正在獲取遠端檔案列表...');
+                const treeApiUrl = `https://api.github.com/repos/${githubSettings.user}/${githubSettings.repo}/git/trees/main?recursive=1`;
+                const treeResponse = await fetch(treeApiUrl);
+                
+                if (!treeResponse.ok) {
+                    throw new Error(`無法從 GitHub API 獲取檔案列表: ${treeResponse.statusText}`);
+                }
+                const treeData = await treeResponse.json();
+
+                if (treeData.truncated) {
+                    console.warn("警告: GitHub 檔案列表被截斷，可能部分資料未載入。");
+                    showModal('警告', '<p>儲存庫中的檔案數量過多，GitHub API 返回的檔案列表可能不完整，部分資料可能無法載入。</p>');
+                }
+
                 const now = new Date();
                 const currentYear = now.getFullYear();
                 const dailyStartYear = currentYear - 1;
                 const financialStartYear = currentYear - 2;
 
-                // 1. 載入基本資料與營收 (維持不變)
-                allPromises.push(fetch(`${dataUrlPrefix}/basic.json?v=${new Date().getTime()}`)
-                    .then(res => res.ok ? res.json() : Promise.reject('basic.json failed'))
-                    .then(data => ({ type: 'basic', data })));
-                
-                allPromises.push(fetch(`${dataUrlPrefix}/revenue.json?v=${new Date().getTime()}`)
-                    .then(res => res.ok ? res.json() : null)
-                    .then(data => ({ type: 'revenue', data })));
-                
-                // --- START: 加速讀取的核心修改 ---
-                // 2. 直接生成可能的檔案路徑，而不是列出目錄
-                for (let year = financialStartYear; year <= currentYear; year++) {
-                    for (let q = 1; q <= 4; q++) {
-                        const quarter = `Q${q}`;
+                for (const file of treeData.tree) {
+                    const path = file.path; 
+                    if (file.type !== 'blob' || !path.startsWith('data/')) continue;
 
-                        // 生成財務報表的路徑
-                        const financialFiles = ['IS.json', 'BS.json', 'CF.json'];
-                        financialFiles.forEach(fileName => {
-                            const financialsUrl = `${dataUrlPrefix}/${year}/${quarter}/${fileName}?v=${new Date().getTime()}`;
-                            allPromises.push(fetch(financialsUrl)
-                                .then(res => res.ok ? res.json() : null)
-                                .then(data => ({type: 'financials', data}))
-                            );
-                        });
+                    const parts = path.split('/');
+                    const fileName = parts[parts.length - 1];
+                    
+                    let fileType = '';
+                    let shouldFetch = false;
 
-                        // 如果年份在每日行情的範圍內，生成每日行情路徑
+                    if (path === 'data/basic.json') {
+                        fileType = 'basic';
+                        shouldFetch = true;
+                    } else if (path === 'data/revenue.json') {
+                        fileType = 'revenue';
+                        shouldFetch = true;
+                    } else if (['IS.json', 'BS.json', 'CF.json'].includes(fileName)) {
+                        const year = parseInt(parts[1], 10);
+                        if (year >= financialStartYear) {
+                            fileType = 'financials';
+                            shouldFetch = true;
+                        }
+                    } else if (fileName === 'daily.json') {
+                        const year = parseInt(parts[1], 10);
                         if (year >= dailyStartYear) {
-                            // 每個季度有三個月份
-                            for (let m = (q - 1) * 3 + 1; m <= q * 3; m++) {
-                                const month = m.toString().padStart(2, '0');
-                                const dailyUrl = `${dataUrlPrefix}/${year}/${quarter}/${month}/daily.json?v=${new Date().getTime()}`;
-                                allPromises.push(fetch(dailyUrl)
-                                    .then(res => res.ok ? res.json() : null)
-                                    .then(data => ({type: 'daily', data}))
-                                );
-                            }
+                            fileType = 'daily';
+                            shouldFetch = true;
                         }
                     }
+
+                    if (shouldFetch) {
+                        const fileUrl = `${dataUrlPrefix}/${path}?v=${new Date().getTime()}`;
+                        allPromises.push(
+                            fetch(fileUrl)
+                                .then(res => res.ok ? res.json() : null)
+                                .then(data => ({ type: fileType, data }))
+                        );
+                    }
                 }
-                // --- END: 加速讀取的核心修改 ---
                 
                 let filesProcessed = 0;
                 const totalFilesToLoad = allPromises.length;
@@ -900,9 +932,7 @@
                 results.forEach(result => {
                     if (result && result.data) {
                         if (Array.isArray(result.data)) {
-                            if (result.type === 'financials') {
-                                stockData.financials.push(...result.data);
-                            } else if (stockData[result.type] && Array.isArray(stockData[result.type])) {
+                            if (stockData[result.type] && Array.isArray(stockData[result.type])) {
                                 stockData[result.type].push(...result.data);
                             }
                         } else {
@@ -921,16 +951,12 @@
             }
         }
         
-        
-        
-        
         function isNormalStock(symbol) {
             if (typeof symbol !== 'string') return false;
             return /^\d{4}$/.test(symbol) && !symbol.startsWith('00');
         }
 
         function preprocessData() {
-            // 過濾掉非普通股
             stockData.basic = stockData.basic.filter(s => isNormalStock(s['證券代號']));
             const validSymbols = new Set(stockData.basic.map(s => s['證券代號']));
             
@@ -1097,6 +1123,10 @@
             modalContent.innerHTML = contentHTML;
             modalOverlay.style.display = 'block';
             lucide.createIcons();
+            const modalTables = modalContent.querySelectorAll('table');
+            if (modalTables) {
+                modalTables.forEach(table => makeTableResizable(table));
+            }
         }
         function hideModal() {
             modalOverlay.style.display = 'none';
@@ -1813,14 +1843,17 @@
             const numColor = (n) => n > 0 ? 'text-red-600' : (n < 0 ? 'text-green-600' : 'text-gray-700');
             
             const tableHTML = `
-                <table class="w-full text-sm">
+                <table class="w-full text-sm table-fixed">
                     <thead><tr class="border-b border-gray-200">
                         ${headers.map(h => {
                             let sortIcon = '';
                             if (h.key === state.sortColumn) {
                                 sortIcon = state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>';
                             }
-                            return `<th class="pb-2 font-normal text-gray-500 ${h.align} sortable-header" data-key="${h.key}"><div class="flex items-center ${h.align === 'text-right' ? 'justify-end' : ''}">${h.label}${sortIcon}</div></th>`;
+                            return `<th class="pb-2 font-normal text-gray-500 ${h.align} sortable-header resizable" data-key="${h.key}" style="width: 120px;">
+                                        <div class="flex items-center ${h.align === 'text-right' ? 'justify-end' : ''}">${h.label}${sortIcon}</div>
+                                        <div class="resizer"></div>
+                                    </th>`;
                         }).join('')}
                     </tr></thead>
                     <tbody>
@@ -1840,6 +1873,8 @@
                 </table>
             `;
             container.innerHTML = tableHTML;
+            const table = container.querySelector('table');
+            if (table) makeTableResizable(table);
             lucide.createIcons();
 
             container.querySelectorAll('.sortable-header').forEach(th => {
@@ -1900,7 +1935,6 @@
             
             let labels, dataForeign, dataIt, dataDealer;
             
-            // MODIFIED: Logic for chart's date range
             if (selectedPeriod === 'MTD' || selectedPeriod === 'YTD') {
                 const monthlyData = {};
                 const endDate = toDate(selectedDate);
@@ -1933,7 +1967,7 @@
                 dataIt = sortedMonths.map(m => monthlyData[m].it);
                 dataDealer = sortedMonths.map(m => monthlyData[m].dealer);
 
-            } else { // For 1D and WTD, always show last 10 days
+            } else { 
                 const tempEndDate = toDate(selectedDate);
                 tempEndDate.setHours(0, 0, 0, 0);
 
@@ -2091,9 +2125,9 @@
 
         function createLeaderboardTable(data, headers, rowMapper, alignments = []) {
             if (!data || data.length === 0) return `<div class="text-center py-4 text-gray-500 text-xs">無資料</div>`;
-            return `<div class="overflow-y-auto max-h-[60vh]"><table class="w-full text-sm">
+            return `<div class="overflow-y-auto max-h-[60vh]"><table class="w-full text-sm table-fixed">
                     <thead><tr class="border-b border-gray-200 sticky top-0 bg-white">
-                        ${headers.map((h, i) => `<th class="py-2 px-1 font-normal text-gray-500 ${alignments[i] || 'text-left'}">${h}</th>`).join('')}
+                        ${headers.map((h, i) => `<th class="py-2 px-1 font-normal text-gray-500 ${alignments[i] || 'text-left'} resizable" style="width: 120px;">${h}<div class="resizer"></div></th>`).join('')}
                     </tr></thead>
                     <tbody>
                         ${data.map(item => `
@@ -2162,7 +2196,10 @@
                 let headerHTML = '<tr>';
                 headers.forEach(h => {
                     let sortIcon = h === state.sortColumn ? (state.sortDirection === 'asc' ? '<i data-lucide="arrow-up" class="w-4 h-4 ml-1"></i>' : '<i data-lucide="arrow-down" class="w-4 h-4 ml-1"></i>') : '';
-                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sortable-header" style="${columnWidths[h] ? `width: ${columnWidths[h]}` : ''}" data-key="${h}"><div class="flex items-center">${h}${sortIcon}</div></th>`;
+                    headerHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sortable-header resizable" style="${columnWidths[h] ? `width: ${columnWidths[h]}`: 'width: 150px'}" data-key="${h}">
+                                        <div class="flex items-center">${h}${sortIcon}</div>
+                                        <div class="resizer"></div>
+                                   </th>`;
                 });
                 headerHTML += '</tr>';
                 
@@ -2220,6 +2257,8 @@
                 }
 
                 renderPagination(containerId, totalItems);
+                const table = container.querySelector('table');
+                if (table) makeTableResizable(table);
                 lucide.createIcons();
                 
                 const debouncedRender = debounce(() => { state.currentPage = 1; render(); }, 300);
@@ -2326,7 +2365,6 @@
             showLoading('正在計算個股與產業指標...');
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            // 根據目前 active 的 tab 決定渲染哪些內容
             const activeTab = document.querySelector('#analysis-tabs .active')?.dataset.panel || 'analysis-summary';
             await renderAnalysisTabs(symbol, activeTab);
             
@@ -2803,7 +2841,7 @@
                 return;
             }
             
-            let currentUnit = 'M';
+            let currentUnit = 'M'; // Default unit
 
             const statementsByType = financials.reduce((acc, item) => {
                 const type = item.type;
@@ -2850,200 +2888,184 @@
                 if (currentUnit === 'K') divisor = 1;
                 if (currentUnit === 'B') divisor = 1000000;
 
-                let dataForTable = [];
                 const sourceData = statementsByType[type] || [];
-
-                if (mode === 'annual') {
-                    // 年度資料邏輯：直接篩選第四季的累計值作為年度值
-                    dataForTable = sourceData.filter(item => item && String(item.quarter).trim() === '4');
-                } else { 
-                    // --- START: REFINED SINGLE-QUARTER CALCULATION ---
-                    if (type === 'IncomeStatement' || type === 'CashFlow') {
-                        // 步驟 1: 將原始(累計)數據按期間分組
-                        const cumulativeDataByPeriod = sourceData.reduce((acc, item) => {
-                            if (!item || !item.year || !item.quarter) return acc;
-                            const periodKey = `${item.year}Q${item.quarter}`;
-                            if (!acc[periodKey]) acc[periodKey] = {};
-                            acc[periodKey][item.field] = item;
-                            return acc;
-                        }, {});
-
-                        // 步驟 2: 按時間順序排序所有期間
-                        const sortedPeriods = Object.keys(cumulativeDataByPeriod).sort((a,b) => {
-                             const [yA, qA_str] = a.split('Q');
-                             const [yB, qB_str] = b.split('Q');
-                             const yA_num = parseInt(yA), yB_num = parseInt(yB);
-                             const qA_num = parseInt(qA_str), qB_num = parseInt(qB_str);
-                             if (yA_num !== yB_num) return yA_num - yB_num;
-                             return qA_num - qB_num;
-                        });
-                        
-                        const singleQuarterData = [];
-                        
-                        // 步驟 3: 遍歷所有排序好的期間，計算單季數據
-                        sortedPeriods.forEach(periodKey => {
-                            const [yearStr, quarterStr] = periodKey.split('Q');
-                            const year = parseInt(yearStr);
-                            const quarter = parseInt(quarterStr);
-                            const currentQuarterItems = cumulativeDataByPeriod[periodKey];
-
-                            // 對於 Q1，其單季值 = 累計值，無需計算
-                            if (quarter === 1) {
-                                Object.values(currentQuarterItems).forEach(item => singleQuarterData.push(item));
-                            } else {
-                                // 對於 Q2, Q3, Q4，其單季值 = 當季累計 - 上一季累計
-                                const prevQuarterKey = `${year}Q${quarter - 1}`;
-                                const prevQuarterItems = cumulativeDataByPeriod[prevQuarterKey];
-
-                                // 遍歷當季的每一個會計科目
-                                Object.values(currentQuarterItems).forEach(item => {
-                                    let singleQuarterValue = parseFloatSafe(item.value);
-                                    
-                                    // 如果找到了上一季的數據，就進行減法
-                                    if (prevQuarterItems && prevQuarterItems[item.field]) {
-                                        const prevValue = parseFloatSafe(prevQuarterItems[item.field].value);
-                                        if (!isNaN(singleQuarterValue) && !isNaN(prevValue)) {
-                                            singleQuarterValue = singleQuarterValue - prevValue;
-                                        }
-                                    }
-                                    
-                                    // 將計算出的單季數據放入新的物件中
-                                    singleQuarterData.push({ ...item, value: singleQuarterValue });
-                                });
-                            }
-                        });
-                        // 步驟 4: 使用計算完成的單季數據作為表格的最終數據源
-                        dataForTable = singleQuarterData;
-                    } else { 
-                        // 資產負債表是時點數，直接使用原始數據
-                        dataForTable = sourceData;
-                    }
-                    // --- END: REFINED SINGLE-QUARTER CALCULATION ---
-                }
-
-                if (dataForTable.length === 0) {
-                    document.getElementById('financial-statement-panels').innerHTML = `<div class="text-center py-8 text-gray-500">在 "${mode}" 模式下無資料可顯示。</div>`;
-                    return;
-                }
                 
-                 const periods = [...new Set(dataForTable.filter(d => d && d.year && d.quarter).map(d => {
-                        return mode === 'annual' ? d.year.toString() : `${d.year}Q${d.quarter}`;
-                    }))]
-                    .sort((a, b) => {
-                        const yearA = parseInt(a.substring(0, 4));
-                        const yearB = parseInt(b.substring(0, 4));
-                        if (yearA !== yearB) return yearB - yearA;
-
-                        if (mode === 'quarterly') {
-                            const quarterA = parseInt(a.split('Q')[1] || 0);
-                            const quarterB = parseInt(b.split('Q')[1] || 0);
-                            return quarterB - quarterA;
-                        }
-                        return 0;
-                    });
-                
-                const dataByFieldPeriod = dataForTable.reduce((acc, item) => {
-                    if (!item || !item.field) return acc;
-                    const periodKey = mode === 'annual' ? item.year.toString() : `${item.year}Q${item.quarter}`;
-                    if (!acc[item.field]) acc[item.field] = {};
-                    acc[item.field][periodKey] = item;
+                const dataByPeriod = sourceData.reduce((acc, item) => {
+                    if (!item || !item.year || !item.quarter) return acc;
+                    const quarterNum = parseInt(String(item.quarter).replace(/\D/g, ''), 10);
+                    if (isNaN(quarterNum)) return acc;
+                    const periodKey = `${item.year}Q${quarterNum}`;
+                    if (!acc[periodKey]) acc[periodKey] = {};
+                    acc[periodKey][item.field] = item;
                     return acc;
                 }, {});
 
+                const periodsToDisplay = Object.keys(dataByPeriod)
+                    .map(p => {
+                        const [year, quarter] = p.split('Q');
+                        return { year: parseInt(year), quarter: parseInt(quarter), key: p };
+                    })
+                    .filter(p => mode === 'annual' ? p.quarter === 4 : true)
+                    .sort((a, b) => {
+                        if (b.year !== a.year) return b.year - a.year;
+                        return b.quarter - a.quarter;
+                    })
+                    .map(p => p.key);
+                
                 const fieldMap = new Map();
-                dataForTable.forEach(item => {
-                     if (item && item.field && !fieldMap.has(item.field)) {
+                sourceData.forEach(item => {
+                    if (item && item.field && !fieldMap.has(item.field)) {
                         fieldMap.set(item.field, { field: item.field, order: item.order, level: item.level });
                     }
                 });
                 const sortedFields = [...fieldMap.values()]
                     .sort((a, b) => a.order - b.order)
                     .map(item => item.field);
-                
+                    
+                const finalGridData = {};
+                for (const field of sortedFields) {
+                    finalGridData[field] = {};
+
+                    const periodsForCalculation = [...periodsToDisplay].reverse();
+                    for (const periodKey of periodsForCalculation) {
+                        const [year, quarter] = periodKey.split('Q').map(Number);
+                        const currentItem = dataByPeriod[periodKey]?.[field];
+
+                        if (!currentItem) {
+                            finalGridData[field][periodKey] = null;
+                            continue;
+                        }
+
+                        let finalValue = parseFloatSafe(currentItem.value);
+                        const contextRef = currentItem.contextref || '';
+                        const isAsOf = contextRef.toLowerCase().includes('asof') || contextRef === '';
+
+                        if (isAsOf) {
+                            finalGridData[field][periodKey] = { value: finalValue, originalItem: currentItem };
+                            continue;
+                        }
+                        
+                        if (mode === 'quarterly') {
+                            if (type.includes('現金流量')) {
+                                if (quarter > 1) {
+                                    const prevPeriodKey = `${year}Q${quarter - 1}`;
+                                    const prevItem = dataByPeriod[prevPeriodKey]?.[field];
+                                    if (prevItem && !prevItem.contextref.toLowerCase().includes('asof')) {
+                                        const prevValue = parseFloatSafe(prevItem.value);
+                                        if (!isNaN(finalValue) && !isNaN(prevValue)) {
+                                            finalValue -= prevValue;
+                                        }
+                                    }
+                                }
+                            }
+                            else if (type.includes('綜合損益')) {
+                                if (quarter === 4) {
+                                    const q4_raw_value = finalValue;
+                                    const q1_cell = finalGridData[field]?.[`${year}Q1`];
+                                    const q2_cell = finalGridData[field]?.[`${year}Q2`];
+                                    const q3_cell = finalGridData[field]?.[`${year}Q3`];
+                                    const q1_val = (q1_cell && typeof q1_cell.value === 'number') ? q1_cell.value : 0;
+                                    const q2_val = (q2_cell && typeof q2_cell.value === 'number') ? q2_cell.value : 0;
+                                    const q3_val = (q3_cell && typeof q3_cell.value === 'number') ? q3_cell.value : 0;
+
+                                    if (!isNaN(q4_raw_value)) {
+                                        finalValue = q4_raw_value - q1_val - q2_val - q3_val;
+                                    }
+                                }
+                            }
+                        }                      
+                        
+                        finalGridData[field][periodKey] = { value: finalValue, originalItem: currentItem };
+                    }
+
+                }
+
+                if (periodsToDisplay.length === 0) {
+                    document.getElementById('financial-statement-panels').innerHTML = `<div class="text-center py-8 text-gray-500">在 "${mode}" 模式下無資料可顯示。</div>`;
+                    return;
+                }
+
                 let tableHTML = `<div class="overflow-auto max-h-[60vh]">
                         <table class="min-w-full text-sm table-fixed">
                             <thead class="bg-gray-50 sticky-thead">
                                 <tr>
-                                    <th class="px-4 py-2 text-left font-medium text-gray-600 sticky-col whitespace-nowrap" style="width: 300px;">會計項目</th>
-                                    ${periods.map(p => {
+                                    <th class="px-4 py-2 text-left font-medium text-gray-600 sticky-col whitespace-nowrap resizable" style="width: 300px;">會計項目<div class="resizer"></div></th>
+                                    ${periodsToDisplay.map(p => {
                                         let label = p; 
                                         if (mode === 'annual') {
-                                            label = `${p}年`;
+                                            label = `${p.substring(0,4)}年`;
                                         } else {
-                                            const parts = p.split('Q');
-                                            if (parts.length === 2) {
-                                                const year = parts[0].slice(-2);
-                                                const quarterNum = parts[1];
-                                                label = `${quarterNum}Q${year}`;
+                                            const [year, quarterNum] = p.split('Q');
+                                            if (year && quarterNum) {
+                                                label = `${quarterNum}Q${year.slice(-2)}`;
                                             }
                                         }
-                                        return `<th class="px-4 py-2 text-right font-medium text-gray-600 whitespace-nowrap" style="width: 120px;">${label}</th>`
+                                        return `<th class="px-4 py-2 text-right font-medium text-gray-600 whitespace-nowrap resizable" style="width: 120px;">
+                                                    ${label}
+                                                    <div class="resizer"></div>
+                                                </th>`
                                     }).join('')}
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-100">
                                 ${sortedFields.map(field => {
-                                    const fieldData = fieldMap.get(field) || {};
-                                    const indent = (fieldData.level || 1) - 1;
+                                    const fieldInfo = fieldMap.get(field) || {};
+                                    const indent = (fieldInfo.level || 1) - 1;
                                     return `<tr>
-        <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
-        ${periods.map(p => {
-            // --- START: 修改部分 ---
-            const dataItem = dataByFieldPeriod[field]?.[p];
-            let displayValue = '--';
+                                        <td class="px-4 py-2 whitespace-nowrap sticky-col" style="padding-left: ${1 + indent * 1.5}rem;">${field}</td>
+                                        ${periodsToDisplay.map(p => {
+                                            const dataCell = finalGridData[field]?.[p];
+                                            let displayValue = '--';
+                                            let colorClass = 'text-gray-700';
 
-            if (dataItem && dataItem.value != null) {
-                const rawValue = parseFloatSafe(dataItem.value);
-                if (!isNaN(rawValue)) {
-                    // 檢查 scale 屬性
-                    if (dataItem.scale === 0) {
-                        // scale 為 0，直接格式化原始值，不進行單位換算
-                        displayValue = formatNumber(rawValue, 0);
-                    } else {
-                        // 否則，進行單位換算
-                        displayValue = formatNumber(rawValue / divisor, 0);
-                    }
-                }
-            }
-            // --- END: 修改部分 ---
-            return `<td class="px-4 py-2 text-right whitespace-nowrap text-gray-700">${displayValue}</td>`;
-        }).join('')}
-    </tr>`
-}).join('')}
+                                            if (dataCell && dataCell.value != null && !isNaN(dataCell.value)) {
+                                                const originalItem = dataCell.originalItem;
+                                                let valueToFormat = dataCell.value;
+                                                let decimals = 0;
+
+                                                if (originalItem.scale === "0") {
+                                                    decimals = parseInt(originalItem.decimals, 10) === 2 ? 2 : 0;
+                                                } else {
+                                                    valueToFormat = dataCell.value / divisor;
+                                                }
+                                                
+                                                if (valueToFormat < 0) {
+                                                    colorClass = 'text-red-600';
+                                                    displayValue = `(${formatNumber(Math.abs(valueToFormat), decimals)})`;
+                                                } else {
+                                                    displayValue = formatNumber(valueToFormat, decimals);
+                                                }
+                                            }
+                                            return `<td class="px-4 py-2 text-right whitespace-nowrap ${colorClass}">${displayValue}</td>`;
+                                        }).join('')}
+                                    </tr>`
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>`;
                 document.getElementById('financial-statement-panels').innerHTML = tableHTML;
+                const table = document.querySelector('#financial-statement-panels table');
+                if (table) makeTableResizable(table);
             };
             
-             container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(b => b.classList.remove('active'));
-                    e.target.classList.add('active');
-                    renderTable();
-                });
-            });
-            container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(b => b.classList.remove('active'));
-                    e.target.classList.add('active');
-                    renderTable();
-                });
-            });
-            container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(b => b.classList.remove('active'));
-                    e.target.classList.add('active');
-                    renderTable();
-                });
-            });
+            container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                container.querySelectorAll('#financial-statement-tabs .sub-tab-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderTable();
+            }));
+            container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                container.querySelectorAll('#financial-statement-mode-controls .control-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderTable();
+            }));
+            container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                container.querySelectorAll('#financial-statement-unit-controls .control-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderTable();
+            }));
 
             renderTable();
         }
-        
-        
-        
-        
         
         function getReportName(key) {
             const names = { basic: '基本資料', daily: '每日行情', revenue: '每月營收', financials: '財務報表' };
@@ -3159,7 +3181,6 @@
                 }
             });
             
-            // --- Analysis Page Tabs ---
             document.getElementById('analysis-tabs').addEventListener('click', (e) => {
                 if (e.target.matches('.tab-btn')) {
                     const panelId = e.target.dataset.panel;
@@ -3175,7 +3196,6 @@
                 }
             });
 
-            // --- Screener Event Listeners ---
             document.getElementById('screener-tabs').addEventListener('click', (e) => {
                 if (e.target.matches('.tab-btn')) {
                     const panelId = e.target.dataset.panel;
@@ -3183,8 +3203,6 @@
                     document.querySelectorAll('#stock-screener .tab-panel').forEach(panel => panel.classList.remove('active'));
                     e.target.classList.add('active');
                     document.getElementById(`panel-${panelId}`).classList.add('active');
-                    
-                    // Trigger screener on tab change
                     runActiveScreener();
                 }
             });
@@ -3354,8 +3372,6 @@
             window.addEventListener('hashchange', () => updateActiveState(window.location.hash || '#dashboard'));
             updateActiveState(initialHash);
         }
-
-        // --- 選股策略相關函式 (RESTORED FROM V24) ---
         
         function runActiveScreener() {
             const activeTab = document.querySelector('#screener-tabs .active');
@@ -3363,21 +3379,11 @@
             
             const panelId = activeTab.dataset.panel;
             switch(panelId) {
-                case 'revenue-momentum':
-                    runRevenueMomentumStrategy();
-                    break;
-                case 'super-performance':
-                    runSuperPerformanceStrategy();
-                    break;
-                case 'it-buy':
-                    runITBuyStrategy();
-                    break;
-                case 'magic-formula':
-                    runMagicFormulaStrategy();
-                    break;
-                case 'f-score':
-                    runFScoreStrategy();
-                    break;
+                case 'revenue-momentum': runRevenueMomentumStrategy(); break;
+                case 'super-performance': runSuperPerformanceStrategy(); break;
+                case 'it-buy': runITBuyStrategy(); break;
+                case 'magic-formula': runMagicFormulaStrategy(); break;
+                case 'f-score': runFScoreStrategy(); break;
             }
         }
 
@@ -3385,13 +3391,11 @@
             if (stockData.tradingDates.length === 0) return;
             const latestDate = stockData.tradingDates[0];
             
-            // Revenue Momentum
             datePickers.rmDate = flatpickr("#rm-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
             const revenueMonthSelect = document.getElementById('rm-revenue-month');
             const availableMonths = [...new Set(stockData.revenue.map(r => r['資料年月']))].sort().reverse();
             revenueMonthSelect.innerHTML = availableMonths.map(m => `<option value="${m}">${m}</option>`).join('');
             
-            // Other screeners
             datePickers.spDate = flatpickr("#sp-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
             datePickers.itDate = flatpickr("#it-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
             datePickers.mfDate = flatpickr("#mf-date", { defaultDate: latestDate, enable: stockData.tradingDates.map(d => toDate(d)), locale:'zh_tw' });
@@ -3400,7 +3404,7 @@
         
         async function runRevenueMomentumStrategy() {
             const resultsContainer = document.getElementById('revenue-momentum-results');
-            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中，請稍候...</div>`;
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">策略計算中...</div>`;
             await new Promise(resolve => setTimeout(resolve, 10));
 
             const maPeriod = parseInt(document.getElementById('rm-ma-period').value, 10);
@@ -3425,8 +3429,7 @@
                 const ma_t1 = calculateMovingAverage(revenueHistory.map(r => r.value), targetIndex - 1, maPeriod);
                 const ma_t2 = calculateMovingAverage(revenueHistory.map(r => r.value), targetIndex - 2, maPeriod);
 
-                if (isNaN(ma_t) || isNaN(ma_t1) || isNaN(ma_t2)) continue;
-                if (!(ma_t > ma_t1 && ma_t1 > ma_t2)) continue;
+                if (isNaN(ma_t) || isNaN(ma_t1) || isNaN(ma_t2) || !(ma_t > ma_t1 && ma_t1 > ma_t2)) continue;
                 
                 const dailyHistory = stockData.dailyBySymbol.get(symbol);
                 if (!dailyHistory) continue;
@@ -3455,37 +3458,17 @@
                 }
 
                 results.push({
-                    symbol: symbol,
-                    name: stockInfo['證券名稱'] || 'N/A',
-                    close: closePrice,
-                    volume: priceRecord.volume,
-                    price_ma: priceMA,
+                    symbol: symbol, name: stockInfo['證券名稱'] || 'N/A', close: closePrice,
+                    volume: priceRecord.volume, price_ma: priceMA,
                     price_ma_ratio: priceMA > 0 ? (closePrice / priceMA - 1) * 100 : 0,
-                    revenue: revenueHistory[targetIndex].value,
-                    ...revenueData
+                    revenue: revenueHistory[targetIndex].value, ...revenueData
                 });
             }
 
-            results.sort((a, b) => {
-                if (sortKey === 'price_ma_ratio') return b.price_ma_ratio - a.price_ma_ratio;
-                if (sortKey === 'volume') return b.volume - a.volume;
-                if (sortKey === 'revenue') return b.revenue - a.revenue;
-                return 0;
-            });
-
-            const revenueMonths = results.length > 0 ? Object.keys(results[0] || {})
-                .filter(k => /^\d{4}-\d{2}$/.test(k))
-                .sort()
-                .reverse() : [];
-
+            results.sort((a, b) => b[sortKey] - a[sortKey]);
+            const revenueMonths = results.length > 0 ? Object.keys(results[0] || {}).filter(k => /^\d{4}-\d{2}$/.test(k)).sort().reverse() : [];
             const headers = ['代號', '名稱', '收盤價', '成交值(億)', `價格MA(${priceMaPeriod})`, '乖離率(%)', ...revenueMonths.map(m => `${m.replace('-', '/')}營收`)];
-            
-            const rowMapper = (s) => [
-                s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2),
-                formatNumber(s.price_ma, 2), formatNumber(s.price_ma_ratio, 2),
-                ...revenueMonths.map(m => formatNumber(s[m] / 1000, 0))
-            ];
-
+            const rowMapper = (s) => [ s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2), formatNumber(s.price_ma, 2), formatNumber(s.price_ma_ratio, 2), ...revenueMonths.map(m => formatNumber(s[m] / 1000, 0)) ];
             renderScreenerResultsTable('revenue-momentum-results', results, headers, rowMapper);
         }
 
@@ -3511,13 +3494,8 @@
                 if (isNaN(closePrice)) continue;
 
                 const prices = priceHistorySlice.map(p => getActivePrice(p));
-                const ma50 = calculateMA(prices, 50);
-                const ma150 = calculateMA(prices, 150);
-                const ma200 = calculateMA(prices, 200);
-
-                if (isNaN(ma50) || isNaN(ma150) || isNaN(ma200)) continue;
-                if (!(closePrice > ma50 && closePrice > ma150 && closePrice > ma200)) continue;
-                if (!(ma50 > ma150 && ma150 > ma200)) continue;
+                const ma50 = calculateMA(prices, 50), ma150 = calculateMA(prices, 150), ma200 = calculateMA(prices, 200);
+                if (isNaN(ma50) || isNaN(ma150) || isNaN(ma200) || !(closePrice > ma50 && closePrice > ma150 && closePrice > ma200) || !(ma50 > ma150 && ma150 > ma200)) continue;
                 
                 const oneMonthAgoRecord = findClosestTradingDay(priceHistorySlice, oneMonthAgo, 'before');
                 if (!oneMonthAgoRecord) continue;
@@ -3530,11 +3508,8 @@
                 const yearHighs = yearHistory.map(d => d.high).filter(p => !isNaN(p));
                 if (yearLows.length === 0 || yearHighs.length === 0) continue;
                 
-                const yearLow = Math.min(...yearLows);
-                const yearHigh = Math.max(...yearHighs);
-
-                if (!(closePrice > yearLow * 1.75)) continue;
-                if (!(closePrice > yearHigh * 0.85)) continue;
+                const yearLow = Math.min(...yearLows), yearHigh = Math.max(...yearHighs);
+                if (!(closePrice > yearLow * 1.75) || !(closePrice > yearHigh * 0.85)) continue;
                 
                 const last21Records = priceHistorySlice.slice(-21);
                 let upDays = 0;
@@ -3544,19 +3519,9 @@
                 if (!(upDays > 10)) continue;
 
                 const stockInfo = stockData.basicInfoMap.get(symbol) || {};
-                results.push({
-                    symbol: symbol,
-                    name: stockInfo['證券名稱'] || 'N/A',
-                    close: closePrice,
-                    volume: lastRecord.volume,
-                    ma50, ma150, ma200,
-                    yearLow, yearHigh,
-                    upDays
-                });
+                results.push({ symbol, name: stockInfo['證券名稱'] || 'N/A', close: closePrice, volume: lastRecord.volume, yearLow, yearHigh, upDays });
             }
-            
             results.sort((a,b) => b.volume - a.volume);
-
             renderScreenerResultsTable('super-performance-results', results,
                 ['代號', '名稱', '收盤價', '成交值(億)', '年內低點', '年內高點', '20日上漲天數'],
                 (s) => [s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2), formatNumber(s.yearLow, 2), formatNumber(s.yearHigh, 2), s.upDays]
@@ -3587,11 +3552,9 @@
                 const history = stockData.dailyBySymbol.get(symbol);
                 const endRecord = history.find(d => d.date.getTime() === selectedDate.getTime());
                 const startRecord = history.find(d => d.date.getTime() === toDate(startDateStr).getTime());
-
                 if (!startRecord || !endRecord) continue;
                 
-                const startPrice = getActivePrice(startRecord);
-                const endPrice = getActivePrice(endRecord);
+                const startPrice = getActivePrice(startRecord), endPrice = getActivePrice(endRecord);
                 if (isNaN(startPrice) || isNaN(endPrice) || startPrice === 0) continue;
 
                 const priceChange = (endPrice / startPrice - 1) * 100;
@@ -3606,19 +3569,9 @@
                 if (itBuyRatio <= 0) continue;
                 
                 const stockInfo = stockData.basicInfoMap.get(symbol) || {};
-                results.push({
-                    symbol,
-                    name: stockInfo['證券名稱'] || 'N/A',
-                    close: endPrice,
-                    volume: endRecord.volume,
-                    itBuyRatio,
-                    priceChange,
-                    itNetBuySum
-                });
+                results.push({ symbol, name: stockInfo['證券名稱'] || 'N/A', close: endPrice, volume: endRecord.volume, itBuyRatio, priceChange, itNetBuySum });
             }
-            
             results.sort((a,b) => b.itBuyRatio - a.itBuyRatio);
-
             renderScreenerResultsTable('it-buy-results', results,
                 ['代號', '名稱', '收盤價', '成交值(億)', `投信買超佔股本(%)`, `期間漲幅(%)`, `投信買超(張)`],
                 (s) => [s.symbol, s.name, formatNumber(s.close, 2), formatNumber(s.volume / 1e8, 2), formatNumber(s.itBuyRatio, 4), formatNumber(s.priceChange, 2), formatNumber(s.itNetBuySum / 1000, 0)]
@@ -3626,18 +3579,12 @@
         }
         
         async function runMagicFormulaStrategy() {
-             const resultsContainer = document.getElementById('magic-formula-results');
-            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">此策略計算複雜，請稍候...</div>`;
-            await new Promise(resolve => setTimeout(resolve, 10));
-            // This is a placeholder as the full implementation is very complex
+            const resultsContainer = document.getElementById('magic-formula-results');
             resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">神奇公式策略尚未完整實作。<br>需要從財報中提取EBIT, 淨營運資金, 淨固定資產, 並計算企業價值(EV)。</div>`;
         }
         
         async function runFScoreStrategy() {
             const resultsContainer = document.getElementById('f-score-results');
-            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">此策略計算複雜，請稍候...</div>`;
-            await new Promise(resolve => setTimeout(resolve, 10));
-             // This is a placeholder as the full implementation is very complex
             resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">F-Score 策略尚未完整實作。<br>需要從財報中提取ROA, CFO, 負債比, 流動比, 股本, 毛利率, 資產週轉率等數據並進行年度比較。</div>`;
         }
 
@@ -3650,15 +3597,54 @@
         
         function findClosestTradingDay(dailyHistory, targetDate, direction = 'before') {
             if (direction === 'before') {
-                for (let i = dailyHistory.length - 1; i >= 0; i--) {
-                    if (dailyHistory[i].date <= targetDate) return dailyHistory[i];
-                }
+                for (let i = dailyHistory.length - 1; i >= 0; i--) { if (dailyHistory[i].date <= targetDate) return dailyHistory[i]; }
             } else {
-                for (let i = 0; i < dailyHistory.length; i++) {
-                    if (dailyHistory[i].date >= targetDate) return dailyHistory[i];
-                }
+                for (let i = 0; i < dailyHistory.length; i++) { if (dailyHistory[i].date >= targetDate) return dailyHistory[i]; }
             }
             return null;
+        }
+
+        function makeTableResizable(table) {
+            const headers = table.querySelectorAll('th.resizable');
+            headers.forEach(header => {
+                const resizer = header.querySelector('.resizer');
+                if (!resizer) return;
+
+                const mouseDownHandler = (e) => {
+                    // 只處理左鍵點擊並阻止預設行為和事件冒泡
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const startX = e.clientX;
+                    const startWidth = header.offsetWidth;
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+
+                    const mouseMoveHandler = (moveEvent) => {
+                        const newWidth = startWidth + (moveEvent.clientX - startX);
+                        if (newWidth > 50) { // 設定最小寬度
+                            header.style.width = `${newWidth}px`;
+                        }
+                    };
+
+                    const mouseUpHandler = () => {
+                        document.removeEventListener('mousemove', mouseMoveHandler);
+                        document.removeEventListener('mouseup', mouseUpHandler);
+                        resizer.classList.remove('resizing');
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                    };
+                    
+                    document.addEventListener('mousemove', mouseMoveHandler);
+                    document.addEventListener('mouseup', mouseUpHandler);
+                    resizer.classList.add('resizing');
+                };
+                
+                // 清除可能存在的舊監聽器，以防重複綁定
+                resizer.removeEventListener('mousedown', mouseDownHandler);
+                resizer.addEventListener('mousedown', mouseDownHandler);
+            });
         }
 
         function renderScreenerResultsTable(containerId, results, headers, rowMapper) {
@@ -3671,10 +3657,10 @@
             const tableHTML = `
                 <p class="text-sm text-gray-600 mb-4">篩選出 ${results.length} 檔個股。</p>
                 <div class="overflow-auto" style="max-height: 60vh;">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm table-fixed">
                         <thead class="sticky-header">
                             <tr>
-                                ${headers.map(h => `<th class="px-4 py-3 text-left font-medium text-gray-500 whitespace-nowrap">${h}</th>`).join('')}
+                                ${headers.map(h => `<th class="px-4 py-3 text-left font-medium text-gray-500 whitespace-nowrap resizable" style="width: 150px;">${h}<div class="resizer"></div></th>`).join('')}
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
@@ -3688,10 +3674,12 @@
                 </div>
             `;
             container.innerHTML = tableHTML;
+            const table = container.querySelector('table');
+            if (table) makeTableResizable(table);
         }
     });
+    
     </script>
 
 </body>
 </html>
-
