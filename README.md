@@ -1,7 +1,7 @@
 📊 TaviStock - 全方位台股儀表板
 TaviStock 是一個功能強大、介面現代化的台股分析儀表板。它完全基於前端技術（HTML, CSS, JavaScript），直接從公開的 GitHub 儲存庫讀取資料，無需後端伺服器。無論您是投資新手還是經驗豐富的分析師，TaviStock 都能為您提供清晰、即時的市場洞察。
 
-✨ 點擊此處，立即體驗 Live Demo ✨
+✨ 點擊此處，立即體驗 Live Demo(https://andychu221.github.io/TaiStock/) ✨
 
 🚀 主要功能亮點
 📈 市場儀表板 (Dashboard):
